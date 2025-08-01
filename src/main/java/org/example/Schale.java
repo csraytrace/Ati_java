@@ -1,3 +1,5 @@
+package org.example;
+
 public enum Schale {
     K,
     L1,

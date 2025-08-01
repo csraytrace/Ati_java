@@ -1,3 +1,5 @@
+package org.example;
+
 public class Kante {
 
     public Kante(Schale schale, double energy, double jump) {

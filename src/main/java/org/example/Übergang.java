@@ -1,3 +1,5 @@
+package org.example;
+
 public class Übergang {
 
     private boolean aktiv = false;

@@ -134,7 +134,7 @@ public class Verbindung {
     public double getWeight() {
 
         if (Elementliste.size() > 1 && !warningShown) {
-            System.err.println("WARNUNG: getWeight() ist nur für eine einzelne Verbindung korrekt! Mehrere Elemente bedeuten meist ein Gemisch – das Ergebnis kann falsch sein.");
+            System.err.println("WARNUNG: getWeight() ist nur für eine einzelne Verbindung korrekt! Das Ergebnis ist falsch bei einem Gemisch.");
             warningShown = true;
         }
         // 1. Schritt: Stoffmenge (mol) jedes Elements berechnen

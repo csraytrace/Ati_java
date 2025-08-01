@@ -5,7 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
-public class Main {
+public class test {
     public static void main(String[] args) {
         // Pfad zur Datei und Element wählen
         String dateipfad = "McMaster.txt";
@@ -120,21 +120,21 @@ public class Main {
 
 
 
-            // 1. Filter-Liste erzeugen (kann auch leer sein)
-            List<Verbindung> filter = new ArrayList<>();
-            // Beispiel: Verbindung mit Dichte 0.1 und Symbol "Be"
-            Verbindung beFilter = new Verbindung(
-                    new String[]{"Be"},
-                    new double[]{1.0},
-                    0, 35, 0.05,    // Emin, Emax, step
-                    "MCMASTER.TXT",
-                    0.1             // Dichte
-            );
+        // 1. Filter-Liste erzeugen (kann auch leer sein)
+        List<Verbindung> filter = new ArrayList<>();
+        // Beispiel: Verbindung mit Dichte 0.1 und Symbol "Be"
+        Verbindung beFilter = new Verbindung(
+                new String[]{"Be"},
+                new double[]{1.0},
+                0, 35, 0.05,    // Emin, Emax, step
+                "MCMASTER.TXT",
+                0.1             // Dichte
+        );
         //beFilter.setFensterDickeCm(0.4);
-            filter.add(beFilter);
+        filter.add(beFilter);
 
-            // 2. Dummy-Probe bauen (hier mit 1 Element "Ag" – passe an!)
-            //List<String> elementSymbole = Arrays.asList("Ag");
+        // 2. Dummy-Probe bauen (hier mit 1 Element "Ag" – passe an!)
+        //List<String> elementSymbole = Arrays.asList("Ag");
         List<String> elementSymbole = Arrays.asList("Si","al");
         List<Integer> elementInt = Arrays.asList(2,1);
 
@@ -154,38 +154,38 @@ public class Main {
 
 
 
-            // 4. Erzeuge CalcI-Instanz
-            CalcI calc = new CalcI(
-                    "MCMASTER.TXT",  // dateipfad
-                    probe,
-                    "widerschwinger", // Röhrentyp (oder "lovescott")
-                    "Rh",             // Röhrenmaterial
-                    20, 70,           // Einfallswinkel alpha, beta
-                    0,                // Fensterwinkel
-                    1,                // sigma
-                    1,                // charzucontL
-                    "Be",             // Fenstermaterial Röhre
-                    125,              // Fensterdicke Röhre (µm)
-                    1,                // Raumwinkel
-                    0.01,             // Röhrenstrom (A)
-                    Emin, Emax,            // Emin, Emax
-                    step,             // step
-                    30,               // Messzeit
-                    1,                // charzucont
-                    "Be",             // Fenstermaterial Detektor
-                    7.62,             // Fensterdicke Detektor (µm)
-                    0,                // phi Detektor
-                    "Au",             // Kontaktmaterial
-                    50,               // Kontaktmaterialdicke (nm)
-                    1,                // Bedeckungsfaktor
-                    45,               // palpha Grad
-                    45,               // pbeta Grad
-                    "Si",             // Detektormaterial
-                    0.05,             // Totschicht (µm)
-                    3,                // activeLayer (mm)
-                    filter,            // Filter-Liste
-                    filter
-            );
+        // 4. Erzeuge CalcI-Instanz
+        CalcI calc = new CalcI(
+                "MCMASTER.TXT",  // dateipfad
+                probe,
+                "widerschwinger", // Röhrentyp (oder "lovescott")
+                "Rh",             // Röhrenmaterial
+                20, 70,           // Einfallswinkel alpha, beta
+                0,                // Fensterwinkel
+                1,                // sigma
+                1,                // charzucontL
+                "Be",             // Fenstermaterial Röhre
+                125,              // Fensterdicke Röhre (µm)
+                1,                // Raumwinkel
+                0.01,             // Röhrenstrom (A)
+                Emin, Emax,            // Emin, Emax
+                step,             // step
+                30,               // Messzeit
+                1,                // charzucont
+                "Be",             // Fenstermaterial Detektor
+                7.62,             // Fensterdicke Detektor (µm)
+                0,                // phi Detektor
+                "Au",             // Kontaktmaterial
+                50,               // Kontaktmaterialdicke (nm)
+                1,                // Bedeckungsfaktor
+                45,               // palpha Grad
+                45,               // pbeta Grad
+                "Si",             // Detektormaterial
+                0.05,             // Totschicht (µm)
+                3,                // activeLayer (mm)
+                filter,            // Filter-Liste
+                filter
+        );
 
         PreparedValues pv = calc.werteVorbereitenAlle();
 

@@ -149,6 +149,63 @@ public class Probe {
         return result;
     }
 
+    public Probe filterByMinZ(int minZ) {
+        List<Element> filteredElements = new ArrayList<>();
+        List<Double> filteredIntensitaeten = new ArrayList<>();
+        List<List<Boolean>> aktiveUebergaengeVorher = new ArrayList<>();
+
+        // Speichere die Aktiv-Status für jeden Übergang jedes Elements
+        for (int i = 0; i < elemente.size(); i++) {
+            List<Übergang> uebergListe = uebergaengeProElement.get(i);
+            List<Boolean> aktivFlags = new ArrayList<>();
+            for (Übergang u : uebergListe) {
+                aktivFlags.add(u.isAktiv());
+            }
+            aktiveUebergaengeVorher.add(aktivFlags);
+        }
+
+        // Filtere und merke Original-Indizes!
+        List<Integer> neueIndizes = new ArrayList<>();
+        for (int i = 0; i < elemente.size(); i++) {
+            Element el = elemente.get(i);
+            if (el.getAtomicNumber() >= minZ) {
+                filteredElements.add(el);
+                filteredIntensitaeten.add(intensitaeten[i]);
+                neueIndizes.add(i);  // Merke alten Index
+            }
+        }
+
+        // Neue Symbolliste
+        List<String> symbole = filteredElements.stream()
+                .map(Element::getSymbol)
+                .toList();
+
+        // Erstelle die neue Probe
+        Probe neueProbe = new Probe(
+                symbole,        // neue Symbolliste
+                dateipfad,
+                Emin, Emax, step,
+                filteredIntensitaeten
+        );
+
+        // Setze die aktiven Übergänge in der neuen Probe:
+        for (int j = 0; j < neueIndizes.size(); j++) {
+            int altIndex = neueIndizes.get(j);
+            List<Boolean> aktivFlags = aktiveUebergaengeVorher.get(altIndex);
+            List<Übergang> neueListe = neueProbe.getUebergaengeProElement().get(j);
+
+            // Setze den Aktiv-Status wie im Original (bis zur Länge der neuen Liste)
+            for (int k = 0; k < Math.min(aktivFlags.size(), neueListe.size()); k++) {
+                neueListe.get(k).setAktiv(aktivFlags.get(k));
+            }
+        }
+        return neueProbe;
+    }
+
+
+
+
+
     public double getEmin(){return Emin;}
     public double getEmax(){return Emax;}
     public double getStep(){return step;}

@@ -143,7 +143,7 @@ public class CalcI {
         double[][][] mu0       = new double[nEle][nEle][4];
         double[][][] tau_ijk   = new double[nEle][nEle][mau];
         double[][][] mu_ijk    = new double[nEle][nEle][mau];
-        double[][][] sij_xyz   = new double[nEle][4][mau * nEle]; // Platzhalter
+        double[][][] sij_xyz   = new double[nEle][4][mau * nEle];
 
         /* ---------- 3. Kanten & Übergänge füllen ---------- */
         int idxEle = 0;
@@ -751,10 +751,14 @@ public class CalcI {
 
 
 
+    public static double[] berechneRelKonzentrationen(
+            CalcI calc, PreparedValues pvStart
+    ) {
+        return berechneRelKonzentrationen(calc,pvStart,100);
 
+    }
 
-
-
+    public Probe getProbe() { return probe; }
 
 
 

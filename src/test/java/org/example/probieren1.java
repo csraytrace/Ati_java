@@ -10,12 +10,16 @@ public class probieren1 {
         String ver1 = "Ti";
         String ver2 = " TiO2";
         //String ver3 = "1 Al2O3 + 1 TiO2";
-        String ver3 = "Al2O5Ti";
+        //String ver3 = "68 Ga + 21 In + 11 Sn";
+        //String ver3 = "1 Ga68In21Sn11";
+        String ver3 = "1 Ga116In22Sn11";
+
 
 
         Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
         Verbindung v2 = f.parseVerbindung(ver2,Emin, Emax, step, "McMaster.txt");
         Verbindung v3 = f.parseVerbindung(ver3,Emin, Emax, step, "McMaster.txt");
+        //v3.zuAtomprozent();
         //System.out.println(v1.getDichte()+", ");
         System.out.println(v3.getWeight()+", ");
         System.out.println(v2.getWeight() / v1.getWeight() );

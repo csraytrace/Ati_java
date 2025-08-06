@@ -134,8 +134,6 @@ public class Kalibrierung {
     }
 
 
-
-
     public static double[] kalibrierungNLLS_bobyqa(
             List<String[]> para_var,
             List<double[]> grenzen,
@@ -187,10 +185,6 @@ public class Kalibrierung {
 
         return optimum.getPoint();
     }
-
-
-
-
 
 
 

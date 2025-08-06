@@ -257,6 +257,76 @@ public class test {
 
 
 
+        List<String> elementSymboleDark = Arrays.asList("Si","al","O");
+        List<Integer> elementIntDark = Arrays.asList(2,1,55);
+
+        Emin = 0;
+        Emax = 30;
+        step = 10;
+
+        Probe probeDark = new Probe(elementSymboleDark , "MCMASTER.TXT", Emin, Emax, step,elementIntDark );
+
+        //probe.setzeUebergangAktivFuerElement(0, "K", "L2");
+        //probe.setzeUebergangAktivFuerElement(0, "l3", "m1");
+        //probe.setzeUebergangAktivFuerElement(0, "K", "L3");
+        //probe.setzeUebergangAktivFuerElement(0, "K", "L1");
+        probeDark.setzeUebergangAktivFuerElementKAlpha(0);
+        probeDark.setzeUebergangAktivFuerElementKAlpha(1);
+        //probe.setzeUebergangAktivFuerElementLAlpha(1);
+
+
+
+        // 4. Erzeuge CalcI-Instanz
+        CalcIDark calcDark = new CalcIDark(
+                "MCMASTER.TXT",  // dateipfad
+                probeDark,
+                "widerschwinger", // Röhrentyp (oder "lovescott")
+                "Rh",             // Röhrenmaterial
+                20, 70,           // Einfallswinkel alpha, beta
+                0,                // Fensterwinkel
+                1,                // sigma
+                1,                // charzucontL
+                "Be",             // Fenstermaterial Röhre
+                125,              // Fensterdicke Röhre (µm)
+                1,                // Raumwinkel
+                0.01,             // Röhrenstrom (A)
+                Emin, Emax,            // Emin, Emax
+                step,             // step
+                30,               // Messzeit
+                1,                // charzucont
+                "Be",             // Fenstermaterial Detektor
+                7.62,             // Fensterdicke Detektor (µm)
+                0,                // phi Detektor
+                "Au",             // Kontaktmaterial
+                50,               // Kontaktmaterialdicke (nm)
+                1,                // Bedeckungsfaktor
+                45,               // palpha Grad
+                45,               // pbeta Grad
+                "Si",             // Detektormaterial
+                0.05,             // Totschicht (µm)
+                3,                // activeLayer (mm)
+                filter,            // Filter-Liste
+                filter
+        );
+
+        List<Double> darkMatrixList = Arrays.asList(0.1, 1.0, 2.1);
+        double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
+
+
+
+        double[] relKonzDark = calcDark.KonzDark(1,darkMatrix);
+
+        System.out.println("Relative Konzentrationen in %:");
+        for (int i = 0; i < relKonzDark.length; i++) {
+            System.out.printf("Element %d: %.2f %%\n", i, relKonzDark[i]);
+        }
+
+
+
+
+
+
+
         //System.out.println(v1.erzeuge_Filter(20));
 
 

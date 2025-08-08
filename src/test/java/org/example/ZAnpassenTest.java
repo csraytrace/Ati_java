@@ -10,9 +10,9 @@ public class ZAnpassenTest {
 
 
         // Beispielwerte
-        double[] konzLow  = {0.05, 0.05}; // Konzentrationen für niedrige Z
+        double[] konzLow  = {0.5, 0.5}; // Konzentrationen für niedrige Z
         int[]    zLow     = {6, 8};     // z.B. C, O
-        double[] konzHigh = {0.05, 0.05}; // Konzentrationen für hohe Z
+        double[] konzHigh = {0.90, 2.10}; // Konzentrationen für hohe Z
         int[]    zHigh    = {14, 20};   // z.B. Si, Fe
         double   zGewuenscht = 12;      // Zielwert für gewichtetes Z
 

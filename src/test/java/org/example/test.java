@@ -262,7 +262,7 @@ public class test {
 
         Emin = 0;
         Emax = 30;
-        step = 10;
+        step = 0.01;
 
         Probe probeDark = new Probe(elementSymboleDark , "MCMASTER.TXT", Emin, Emax, step,elementIntDark );
 
@@ -305,16 +305,16 @@ public class test {
                 "Si",             // Detektormaterial
                 0.05,             // Totschicht (µm)
                 3,                // activeLayer (mm)
-                filter,            // Filter-Liste
-                filter
+                null,            // Filter-Liste
+                null
         );
 
-        List<Double> darkMatrixList = Arrays.asList(0.1, 1.0, 2.1);
+        List<Double> darkMatrixList = Arrays.asList(1.);
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
 
 
 
-        double[] relKonzDark = calcDark.KonzDark(1,darkMatrix);
+        double[] relKonzDark = calcDark.startwerte(1,darkMatrix);
 
         System.out.println("Relative Konzentrationen in %:");
         for (int i = 0; i < relKonzDark.length; i++) {

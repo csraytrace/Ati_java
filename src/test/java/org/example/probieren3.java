@@ -3,7 +3,7 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-public class probieren2 {
+public class probieren3 {
 
     public static void main(String[] args) {
 
@@ -75,10 +75,12 @@ public class probieren2 {
 
 
 
-        //double[] optimum = calcDark.optimizeWithBOBYQA( Z,darkMatrix);
-        double[] optimum = {35.9572,29.6599, 34.3829 };   //python
+        double[] optimum = calcDark.optimizeWithBOBYQAEinfach( Z,darkMatrix);
         System.out.println("Optimale Parameter: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResult(optimum,darkMatrix,Z);
+        //calcDark.printOptimizedResult(optimum,darkMatrix,Z);
+        double[] ergebnis = calcDark.ergebnisEinfach(optimum);
+        System.out.println("Optimale Parameter: " + Arrays.toString(ergebnis));
+        calcDark.printOptimizedResult(ergebnis,darkMatrix,Z);
 
 
 
@@ -89,32 +91,11 @@ public class probieren2 {
             System.out.printf("Res %d: %.2f %%\n", i, res_be1[i]);
         }
 
-        //calcDark.printOptimizedResult(res1,darkMatrix,Z);
-
-        //double[] alg = {3.169383350293745, -87.01327919332516, -100.86898770051452};
-        double[] alg = {0.7314573261495299, 0.3169405474094008, 0.3674085315493202};
-        calcDark.printOptimizedResult(alg,darkMatrix,Z);
-
-        double[] alg_angepasst = calcDark.applyZAnpassen(alg,darkMatrix,17);
-        System.out.println("Optimale Parameter alg_angepasst: " + Arrays.toString(alg_angepasst));
-
-        double[] res2 = {0.7314573261495299, 0.3169405474094008, 0.3674085315493202};
-
-        double [] res_be2 = calcDark.berechnenResiduum(res2, darkMatrix,Z);
-
-        for (int i = 0; i < res_be2.length; i++) {
-            System.out.printf("ResAlglib %d: %.2f %%\n", i, res_be2[i]);
-        }
-
-
-
-
-
-
-
-
-
 
 
     }
+
+
+
+
 }

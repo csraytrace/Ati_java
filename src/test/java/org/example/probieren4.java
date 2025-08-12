@@ -3,7 +3,7 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-public class probieren3 {
+public class probieren4 {
 
     public static void main(String[] args) {
 
@@ -68,31 +68,33 @@ public class probieren3 {
 
         double[] relKonzDark = calcDark.startwerte(Z,darkMatrix);
 
-        System.out.println("Startkonzentrationen in %:");
-        for (int i = 0; i < relKonzDark.length; i++) {
-            System.out.printf("Element %d: %.4f %%\n", i, relKonzDark[i]);
+
+
+
+
+
+
+        try {
+            System.out.println("\n==== ALGLIB mindf: Testlauf ====");
+            double[] optimumAlglib = calcDark.optimizeWithALGLIB_DF(Z, darkMatrix);
+            System.out.println("Optimale Parameter (ALGLIB): " + Arrays.toString(optimumAlglib));
+
+            // Ergebnis ausgeben (Z-mittel, Intensitäten etc.)
+            calcDark.printOptimizedResult(optimumAlglib, darkMatrix, Z);
+
+            // Residuen + f-Endwert ausgeben
+            double[] residAlglib = calcDark.berechnenResiduum(optimumAlglib, darkMatrix, Z);
+            double fAlglib = 0.0;
+            for (double r : residAlglib) fAlglib += r * r;
+
+            System.out.printf("Residuen (ALGLIB): %s%n", Arrays.toString(residAlglib));
+            System.out.printf("Summe der quadrierten Residuen (ALGLIB): %.6e%n", fAlglib);
+
+        } catch (Throwable t) {
+            // Falls ALGLIB nicht auf dem Classpath ist oder mindf nicht verfügbar: freundlich degradieren
+            System.err.println("ALGLIB-Test übersprungen: " + t.getMessage());
+            // Optional: t.printStackTrace();
         }
-
-
-
-        double[] optimum = calcDark.optimizeWithBOBYQAEinfach( Z,darkMatrix);
-        System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum,darkMatrix,Z);
-        System.out.println("Optimale Parameter: " + Arrays.toString(optimum));
-        //calcDark.printOptimizedResult(optimum,darkMatrix,Z);
-        double[] ergebnis = calcDark.ergebnisEinfach(optimum);
-        System.out.println("Optimale Parameter: " + Arrays.toString(ergebnis));
-        calcDark.printOptimizedResult(ergebnis,darkMatrix,Z);
-
-
-
-        double[] res1 = {35.9572,29.6599, 34.3829 };
-        double [] res_be1 = calcDark.berechnenResiduum(res1, darkMatrix,Z);
-
-        for (int i = 0; i < res_be1.length; i++) {
-            System.out.printf("Res %d: %.2f %%\n", i, res_be1[i]);
-        }
-
 
 
     }

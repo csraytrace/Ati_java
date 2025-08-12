@@ -3,7 +3,8 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-public class probieren3 {
+public class probieren5 {
+
 
     public static void main(String[] args) {
 
@@ -66,36 +67,25 @@ public class probieren3 {
 
 
 
-        double[] relKonzDark = calcDark.startwerte(Z,darkMatrix);
+        try {
+            System.out.println("\n==== ALGLIB mindf: Testlauf ====");
+            double[] optimumAlglib = calcDark.optimizeWithALGLIB_DF_Einfach(Z, darkMatrix);
+            //System.out.println("Optimale Parameter (ALGLIB): " + Arrays.toString(optimumAlglib));
 
-        System.out.println("Startkonzentrationen in %:");
-        for (int i = 0; i < relKonzDark.length; i++) {
-            System.out.printf("Element %d: %.4f %%\n", i, relKonzDark[i]);
+            // Ergebnis ausgeben (Z-mittel, Intensitäten etc.)
+            calcDark.printOptimizedResultEinfach(optimumAlglib, darkMatrix, Z);
+
+
+
+        } catch (Throwable t) {
+            // Falls ALGLIB nicht auf dem Classpath ist oder mindf nicht verfügbar: freundlich degradieren
+            System.err.println("ALGLIB-Test übersprungen: " + t.getMessage());
+            // Optional: t.printStackTrace();
         }
-
-
-
-        double[] optimum = calcDark.optimizeWithBOBYQAEinfach( Z,darkMatrix);
-        System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum,darkMatrix,Z);
-        System.out.println("Optimale Parameter: " + Arrays.toString(optimum));
-        //calcDark.printOptimizedResult(optimum,darkMatrix,Z);
-        double[] ergebnis = calcDark.ergebnisEinfach(optimum);
-        System.out.println("Optimale Parameter: " + Arrays.toString(ergebnis));
-        calcDark.printOptimizedResult(ergebnis,darkMatrix,Z);
-
-
-
-        double[] res1 = {35.9572,29.6599, 34.3829 };
-        double [] res_be1 = calcDark.berechnenResiduum(res1, darkMatrix,Z);
-
-        for (int i = 0; i < res_be1.length; i++) {
-            System.out.printf("Res %d: %.2f %%\n", i, res_be1[i]);
-        }
-
 
 
     }
+
 
 
 

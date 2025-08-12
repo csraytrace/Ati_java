@@ -66,6 +66,11 @@ public class restest {
         double[] res1 = {18.53361483, 54.05293923, 27.41344593 };
         double[] res2 = {30,29, 34 };
         double[] res3 = {2,5, 8};
+
+
+        double[] res1_einfach = {18.53361483, 27.41344593 };
+        double[] res2_einfach = {30,29};
+        double[] res3_einfach = {2,5};
         double [] res_be1 = calcDark.berechnenResiduum(res1, darkMatrix,Z);
 
         for (int i = 0; i < res_be1.length; i++) {
@@ -82,6 +87,27 @@ public class restest {
 
         for (int i = 0; i < res_be1.length; i++) {
             System.out.printf("Res %d: %.2f \n", i, res_be3[i]);
+        }
+
+
+
+
+        double [] res_be1einfach = calcDark.testberechnenResiduumEinfach(res1_einfach, darkMatrix,Z,1,54.05293923);
+
+        for (int i = 0; i < res_be1einfach.length; i++) {
+            System.out.printf("Res %d: %.2f \n", i, res_be1einfach[i]);
+        }
+
+        double [] res_be2einfach = calcDark.testberechnenResiduumEinfach(res2_einfach, darkMatrix,Z,2,34);
+
+        for (int i = 0; i < res_be2einfach.length; i++) {
+            System.out.printf("Res %d: %.2f \n", i, res_be2einfach[i]);
+        }
+
+        double [] res_be3einfach = calcDark.testberechnenResiduumEinfach(res3_einfach, darkMatrix,Z,2,8);
+
+        for (int i = 0; i < res_be3einfach.length; i++) {
+            System.out.printf("Res %d: %.2f \n", i, res_be3einfach[i]);
         }
 
 

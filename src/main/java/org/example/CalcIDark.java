@@ -1,5 +1,6 @@
 package org.example;
 
+import alglib.*;
 import java.util.List;
 import java.util.Arrays;
 
@@ -287,6 +288,7 @@ public class CalcIDark {
         //    System.out.printf("gesamtKonz %d: %.2f %%\n", i, gesamtKonz[i]);
         //}
 
+
         double [] berechneteIntensitaetDark = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
 
         double[] IbHigh = new double[z_split.indicesHigh.length];
@@ -353,6 +355,11 @@ public class CalcIDark {
             gesamtKonz[z_split.indicesHigh[i]] = konz_high_start[i];
         }
 
+        //for (int i = 0; i < gesamtKonz.length; i++) {
+        //    System.out.printf("gesamtKonz %d: %.2f %%\n", i, gesamtKonz[i]);
+        //}
+        //System.out.println("maxValKonz"+maxValKonz);
+
 
         double [] berechneteIntensitaetDark = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
 
@@ -371,8 +378,8 @@ public class CalcIDark {
             //System.out.println("idx"+idx+"gemint"+gemInt[i]);
             diff[i] = berechneteIntensitaetDark1[idx] - gemInt[i];
 
-            System.out.printf("Index %d: gemessen = %.6f, berechnet = %.6f, Differenz = %.6f%n",
-                   idx, gemInt[i], berechneteIntensitaetDark1[idx], diff[i]);
+            //System.out.printf("Index %d: gemessen = %.6f, berechnet = %.6f, Differenz = %.6f%n",
+             //      idx, gemInt[i], berechneteIntensitaetDark1[idx], diff[i]);
         }
         return diff;
     }
@@ -391,6 +398,14 @@ public class CalcIDark {
             }
         }
         return result;
+    }
+
+    public double [] testberechnenResiduumEinfach(double [] params, double [] low_verteilung, double Z_mittelwert, int index, double konz)
+    {
+        maxValKonz=konz;
+        indexMaxKonz=index;
+
+        return berechnenResiduumEinfach(params, low_verteilung, Z_mittelwert);
     }
 
 
@@ -615,6 +630,77 @@ public class CalcIDark {
 
 
 
+
+    public void printOptimizedResultEinfach(
+            double[] optimizedParams,
+            double[] lowVerteilung,
+            double zMittelwert
+    ) {
+
+        double [] optimizedParamsGanz = ergebnisEinfach(optimizedParams);
+        // 1. Z-Split berechnen
+        List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
+        int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
+        SplitResult z_split = splitByZ(zNumbersArr, darkI);
+        //optimizedParams=KonzDark(zMittelwert,lowVerteilung);
+        //optimizedParams=normiereDaten(optimizedParams);
+
+        double[] alg_angepasst = applyZAnpassen(optimizedParamsGanz,lowVerteilung,zMittelwert);
+
+        // 2. Konzentrationsvektor erzeugen
+        double[] konz_low = lowKonBe(alg_angepasst[0], lowVerteilung);
+        double[] konz_high = Arrays.copyOfRange(alg_angepasst, 1, alg_angepasst.length);
+        //double[] konz_high = lowKonBe(1 - optimizedParams[0], Arrays.copyOfRange(optimizedParams, 1, optimizedParams.length));
+
+        double[] gesamtKonz = new double[z_split.indicesLow.length + z_split.indicesHigh.length];
+        for (int i = 0; i < z_split.indicesLow.length; i++) {
+            gesamtKonz[z_split.indicesLow[i]] = konz_low[i];
+        }
+        for (int i = 0; i < z_split.indicesHigh.length; i++) {
+            gesamtKonz[z_split.indicesHigh[i]] = konz_high[i];
+        }
+
+
+
+        // 3. Mittlere Ordnungszahl berechnen
+        double ordnungszahl_summe = 0.0;
+        double konz_summe = 0.0;
+        for (int i = 0; i < gesamtKonz.length; i++) {
+            ordnungszahl_summe += gesamtKonz[i] * zNumbersArr[i];
+            konz_summe += gesamtKonz[i];
+        }
+        double z_mittel_opt = ordnungszahl_summe / konz_summe;
+
+        // 4. Berechnete Intensitäten bestimmen
+        double[] berechneteIntensitaet = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
+
+        double[] IbHigh = new double[z_split.indicesHigh.length];
+        for (int i = 0; i < z_split.indicesHigh.length; i++) {
+            IbHigh[i] = berechneteIntensitaet[z_split.indicesHigh[i]];
+        }
+
+        double geo = geoIbIg(IbHigh);
+        double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz,geo);
+        //double[] arr = {29.6599, 34.3829, 35.9572};
+        //double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(arr,3.56e-09);
+
+        // 5. Ausgabe
+        System.out.println("===== Ergebnis-Report =====");
+        System.out.println("konz_summe"+konz_summe);
+        System.out.println("Optimierte Konzentrationen: " + Arrays.toString(gesamtKonz));
+        System.out.printf("Optimierte mittlere Ordnungszahl, wird hier zwangsweise immer erreicht: %.4f%n", z_mittel_opt);
+        System.out.println("Berechnete Intensitäten: " + Arrays.toString(berechneteIntensitaet1));
+        System.out.println("==================================");
+    }
+
+
+
+
+
+
+
+
+
     public double[] applyZAnpassen(double[] optimaleKonz, double[] lowVerteilung, double zMittelwert) {
         // Ordnungszahlen holen & splitten
         List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
@@ -651,6 +737,264 @@ public class CalcIDark {
 
         return adjusted;
     }
+
+
+
+
+    public double[] optimizeWithALGLIB_DF(double zMittelwert, double[] lowVerteilung) {
+        double[] start = startwerte(zMittelwert, lowVerteilung);
+        double epsf = 1e-8;      // Abbruchkriterium auf f
+        // int maxits = 5000;    // optional, falls deine ALGLIB-Bindung das anbietet
+        double[] bndl = new double[start.length];
+        double[] bndu = new double[start.length];
+        Arrays.fill(bndl, 0);  // untere Grenzen
+        Arrays.fill(bndu,  1);  // obere Grenzen
+
+
+        try {
+            alglib.mindfstate state = alglib.mindfcreate(start.length, start);
+            alglib.mindfsetcondf(state, epsf);
+            // alglib.mindfsetmaxits(state, maxits); // optional
+            alglib.mindfsetbc(state, bndl, bndu);
+
+            // <<< WICHTIG: Instanzmethode, kein static, keine Bounds >>>
+            Object ctx = new Object[]{ lowVerteilung, zMittelwert };
+            alglib.mindfoptimize(state, this::alglibObjective, null, ctx);
+
+            alglib.mindfresults_results results = alglib.mindfresults(state);
+// Zielwert aus den optimierten Parametern neu berechnen
+            double[] residFinal = this.berechnenResiduum(results.x, lowVerteilung, zMittelwert);
+            double sumSqFinal = 0.0;
+            for (double r : residFinal) sumSqFinal += r * r;
+
+            System.out.printf("[ALGLIB mindf] terminationtype=%d, f=%.6e%n",
+                    results.rep.terminationtype, sumSqFinal);
+
+            return results.x;
+        } catch (alglib.exception e) {
+            System.err.println("ALGLIB-Fehler: " + e.getMessage());
+            return start; // Fallback
+        }
+    }
+
+    /** ALGLIB-Callback: Instanzmethode, schreibt f in fi[0], keine Bounds/Clamps */
+    private void alglibObjective(double[] params, double[] fi, Object obj) {
+        Object[] ctx = (Object[]) obj;
+        double[] lowVerteilung = (double[]) ctx[0];
+        double zMittelwert = (Double) ctx[1];
+
+        double[] resid = this.berechnenResiduum(params, lowVerteilung, zMittelwert);
+        double sumSq = 0.0;
+        for (double r : resid) sumSq += r * r;
+        fi[0] = sumSq;
+    }
+
+
+    public double[] optimizeWithALGLIB_DF_Einfach(double zMittelwert, double[] lowVerteilung) {
+        double [] start1 = startwerte(zMittelwert,lowVerteilung);
+        double[] start = new double[start1.length - 1];
+        for (int i = 0, j = 0; i < start1.length; i++) {
+            if (i != indexMaxKonz) {
+                start[j++] = start1[i];
+            }
+        }
+
+
+
+
+
+
+        double epsf = 1e-8;      // Abbruchkriterium auf f
+        // int maxits = 5000;    // optional, falls deine ALGLIB-Bindung das anbietet
+        double[] bndl = new double[start.length];
+        double[] bndu = new double[start.length];
+        Arrays.fill(bndl, 0);  // untere Grenzen
+        Arrays.fill(bndu,  2);  // obere Grenzen
+
+
+        try {
+            alglib.mindfstate state = alglib.mindfcreate(start.length, start);
+            alglib.mindfsetcondf(state, epsf);
+            // alglib.mindfsetmaxits(state, maxits); // optional
+            alglib.mindfsetbc(state, bndl, bndu);
+
+            // <<< WICHTIG: Instanzmethode, kein static, keine Bounds >>>
+            Object ctx = new Object[]{ lowVerteilung, zMittelwert };
+            alglib.mindfoptimize(state, this::alglibObjectiveEinfach, null, ctx);
+
+
+            alglib.mindfresults_results results = alglib.mindfresults(state);
+// Zielwert aus den optimierten Parametern neu berechnen
+            double[] residFinal = this.berechnenResiduumEinfach(results.x, lowVerteilung, zMittelwert);
+            double sumSqFinal = 0.0;
+            for (double r : residFinal) sumSqFinal += r * r;
+
+            System.out.printf("[ALGLIB mindf] terminationtype=%d, f=%.6e%n",
+                    results.rep.terminationtype, sumSqFinal);
+
+            return results.x;
+        } catch (alglib.exception e) {
+            System.err.println("ALGLIB-Fehler: " + e.getMessage());
+            return start; // Fallback
+        }
+    }
+
+    private void alglibObjectiveEinfach(double[] params, double[] fi, Object obj) {
+        Object[] ctx = (Object[]) obj;
+        double[] lowVerteilung = (double[]) ctx[0];
+        double zMittelwert = (Double) ctx[1];
+
+        double[] resid = this.berechnenResiduumEinfach(params, lowVerteilung, zMittelwert);
+        double sumSq = 0.0;
+        for (double r : resid) sumSq += r * r;
+        fi[0] = sumSq;
+    }
+
+
+
+
+
+    public double[] optimizeWithALGLIB_MINBC_Einfach(double zMittelwert, double[] lowVerteilung) {
+        // Startvektor auf "Einfach"-Form reduzieren (Binder + High ohne Maximum)
+        double[] start1 = startwerte(zMittelwert, lowVerteilung);
+        double[] start = new double[start1.length - 1];
+        for (int i = 0, j = 0; i < start1.length; i++) {
+            if (i != indexMaxKonz) {
+                start[j++] = start1[i];
+            }
+        }
+
+        // Bounds wie in DF-Variante
+        double[] bndl = new double[start.length];
+        double[] bndu = new double[start.length];
+        java.util.Arrays.fill(bndl, 0.0);
+        java.util.Arrays.fill(bndu, 2.0);
+
+        // Toleranzen / Numerik
+        double diffStep = 1e-6; // Schrittweite für numerische Ableitungen
+        double epsg = 1e-8;
+        double epsf = 0.0;
+        double epsx = 1e-8;
+        int maxits = 0; // 0 = automatisch
+
+        try {
+            // Zustand anlegen (funktionsbasierte Variante, Gradient wird numerisch approximiert)
+            alglib.minbcstate state = alglib.minbccreatef(start, diffStep);
+
+            // Grenzen & Abbruchkriterien setzen
+            alglib.minbcsetbc(state, bndl, bndu);
+            alglib.minbcsetcond(state, epsg, epsf, epsx, maxits);
+
+            // Kontext übergeben (lowVerteilung, zMittelwert)
+            Object ctx = new Object[]{ lowVerteilung, zMittelwert };
+
+            // Optimierung starten – Objective gibt einen double zurück
+            alglib.minbcoptimize(state, (params, obj) -> {
+                Object[] c = (Object[]) obj;
+                double[] lowV = (double[]) c[0];
+                double z = (Double) c[1];
+
+                double[] resid = this.berechnenResiduumEinfach(params, lowV, z);
+                double sumSq = 0.0;
+                for (double r : resid) sumSq += r * r;
+                return sumSq;
+            }, null, ctx);
+
+            // Ergebnisse
+            alglib.minbcresults_results results = alglib.minbcresults(state);
+
+            double[] residFinal = this.berechnenResiduumEinfach(results.x, lowVerteilung, zMittelwert);
+            double f = 0.0;
+            for (double r : residFinal) f += r * r;
+
+            System.out.printf("[ALGLIB minbc] terminationtype=%d, f=%.6e%n",
+                    results.rep.terminationtype, f);
+
+            return results.x; // Reduzierter Parametervektor (Einfach)
+
+        } catch (alglib.exception e) {
+            System.err.println("ALGLIB-Fehler (minbc): " + e.getMessage());
+            return start; // Fallback
+        }
+    }
+
+
+
+    public double[] optimizeWithALGLIB_MINBLEIC_Einfach(double zMittelwert, double[] lowVerteilung) {
+        // Startvektor auf "Einfach"-Form reduzieren (Binder + High ohne Maximum)
+        double[] start1 = startwerte(zMittelwert, lowVerteilung);
+        double[] start = new double[start1.length - 1];
+        for (int i = 0, j = 0; i < start1.length; i++) {
+            if (i != indexMaxKonz) {
+                start[j++] = start1[i];
+            }
+        }
+
+        // Box-Bounds wie in DF/BC
+        double[] bndl = new double[start.length];
+        double[] bndu = new double[start.length];
+        java.util.Arrays.fill(bndl, 0.0);
+        java.util.Arrays.fill(bndu, 2.0);
+
+        // Toleranzen
+        double diffStep = 1e-6; // Schrittweite f. numerische Ableitungen
+        double epsg = 1e-8;
+        double epsf = 0.0;
+        double epsx = 1e-8;
+        int maxits = 0; // 0 = auto
+
+        try {
+            // Zustand (Funktion + numerischer Grad)
+            alglib.minbleicstate state = alglib.minbleiccreatef(start, diffStep);
+
+            // Box-Constraints
+            alglib.minbleicsetbc(state, bndl, bndu);
+
+            // (Optional) Lineare Constraints hier setzen, z.B. Summe <= 1.0:
+            // double[][] c = new double[1][start.length];
+            // java.util.Arrays.fill(c[0], 1.0);
+            // double[] ct = new double[]{ 1.0 };
+            // alglib.minbleicsetlc(state, c, ct, 0, 1); // 0 Gleichungen, 1 Ungleichung
+
+            // Abbruchkriterien
+            alglib.minbleicsetcond(state, epsg, epsf, epsx, maxits);
+
+            // Kontext
+            Object ctx = new Object[]{ lowVerteilung, zMittelwert };
+
+            // Optimierung
+            alglib.minbleicoptimize(state, (params, obj) -> {
+                Object[] c = (Object[]) obj;
+                double[] lowV = (double[]) c[0];
+                double z = (Double) c[1];
+
+                double[] resid = this.berechnenResiduumEinfach(params, lowV, z);
+                double sumSq = 0.0;
+                for (double r : resid) sumSq += r * r;
+                return sumSq;
+            }, null, ctx);
+
+            // Ergebnisse
+            alglib.minbleicresults_results results = alglib.minbleicresults(state);
+
+            double[] residFinal = this.berechnenResiduumEinfach(results.x, lowVerteilung, zMittelwert);
+            double f = 0.0;
+            for (double r : residFinal) f += r * r;
+
+            System.out.printf("[ALGLIB minbleic] terminationtype=%d, f=%.6e%n",
+                    results.rep.terminationtype, f);
+
+            return results.x; // reduzierter Vektor (Einfach)
+
+        } catch (alglib.exception e) {
+            System.err.println("ALGLIB-Fehler (minbleic): " + e.getMessage());
+            return start; // Fallback
+        }
+    }
+
+
+
+
 
 
 

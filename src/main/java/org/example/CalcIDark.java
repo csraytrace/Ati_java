@@ -3,6 +3,8 @@ package org.example;
 import alglib.*;
 import java.util.List;
 import java.util.Arrays;
+import java.util.stream.Collectors;
+import java.util.Locale;
 
 import org.apache.commons.math3.optim.nonlinear.scalar.noderiv.BOBYQAOptimizer;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -11,6 +13,23 @@ import org.apache.commons.math3.optim.InitialGuess;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.PointValuePair;
 import org.apache.commons.math3.optim.SimpleBounds;
+
+
+
+import org.hipparchus.linear.Array2DRowRealMatrix;
+import org.hipparchus.linear.ArrayRealVector;
+import org.hipparchus.linear.RealMatrix;
+import org.hipparchus.linear.RealVector;
+import org.hipparchus.optim.SimpleVectorValueChecker;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresBuilder;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresOptimizer;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOptimizer;
+import org.hipparchus.util.Pair;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.*;
+
+
+
+import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
 
 public class CalcIDark {
 
@@ -619,6 +638,9 @@ public class CalcIDark {
         //double[] arr = {29.6599, 34.3829, 35.9572};
         //double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(arr,3.56e-09);
 
+
+
+
         // 5. Ausgabe
         System.out.println("===== BOBYQA-Ergebnis-Report =====");
         System.out.println("konz_summe"+konz_summe);
@@ -684,10 +706,18 @@ public class CalcIDark {
         //double[] arr = {29.6599, 34.3829, 35.9572};
         //double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(arr,3.56e-09);
 
+
+        String out = Arrays.stream(gesamtKonz)
+                .map(v -> v * 100.0)
+                .mapToObj(v -> String.format(Locale.GERMANY, "%.4f", v)) // GERMANY = Komma
+                .collect(Collectors.joining(", ", "[", "]"));
+
+
+
         // 5. Ausgabe
         System.out.println("===== Ergebnis-Report =====");
         System.out.println("konz_summe"+konz_summe);
-        System.out.println("Optimierte Konzentrationen: " + Arrays.toString(gesamtKonz));
+        System.out.println("Optimierte Konzentrationen: " + out + " %");
         System.out.printf("Optimierte mittlere Ordnungszahl, wird hier zwangsweise immer erreicht: %.4f%n", z_mittel_opt);
         System.out.println("Berechnete Intensitäten: " + Arrays.toString(berechneteIntensitaet1));
         System.out.println("==================================");
@@ -991,6 +1021,162 @@ public class CalcIDark {
             return start; // Fallback
         }
     }
+
+
+    // Hipparchus NLLS (Levenberg–Marquardt) – "Einfach"-Parametrisierung
+    public double[] optimizeWithHIPPARCHUS_MINLM_Einfach(double zMittelwert, double[] lowVerteilung) {
+        // Startvektor auf "Einfach" reduzieren
+        double[] start1 = startwerte(zMittelwert, lowVerteilung);
+        double[] start  = new double[start1.length - 1];
+        for (int i = 0, j = 0; i < start1.length; i++) {
+            if (i != indexMaxKonz) start[j++] = start1[i];
+        }
+
+        // Residuen-Länge = #High-Elemente (wie in berechnenResiduumEinfach)
+        java.util.List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
+        int[] zArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
+        SplitResult zSplit = splitByZ(zArr, darkI);
+        final int m = zSplit.indicesHigh.length;
+        final int n = start.length;
+        //System.out.println("m"+m+"n"+n);
+
+        // Modell: gibt Residuen und numerischen Jacobi zurück
+
+        MultivariateJacobianFunction model = point -> {
+            double[] p = point.toArray();
+
+            // Optional: leicht clampen, um NaN/Inf zu vermeiden (Hipparchus-LM hat keine Bounds)
+            for (int j = 0; j < p.length; j++) {
+                if (!Double.isFinite(p[j])) p[j] = 1.0;
+                // weicher Korridor wie in DF/BC/bleic
+                if (p[j] < 1e-12) p[j] = 1e-12;
+                if (p[j] > 2.0)   p[j] = 2.0;
+            }
+
+            double[] resid = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
+            // Safety: keine NaNs/Inf an den Optimierer liefern
+            for (int i = 0; i < resid.length; i++) {
+                if (!Double.isFinite(resid[i])) resid[i] = 1e150;
+            }
+
+
+            /*
+
+            final double h = 1e-6; // Schrittweite für Zentraldifferenzen
+            // Numerischer Jacobi (Zentraldifferenzen)
+            double[][] J = new double[m][n];
+            for (int j = 0; j < n; j++) {
+                double orig = p[j];
+
+                p[j] = orig + h;
+                double[] rp = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
+
+                p[j] = orig - h;
+                double[] rm = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
+
+                p[j] = orig;
+
+                for (int i = 0; i < m; i++) {
+                    double d = (rp[i] - rm[i]) / (2 * h);
+                    if (!Double.isFinite(d)) d = 0.0;
+                    J[i][j] = d;
+                }
+            }
+
+
+             */
+
+
+            final double [] h = computeAbsoluteStep2Point(p); // Schrittweite für Zentraldifferenzen
+            double[][] J = new double[m][n];
+            for (int j = 0; j < n; j++) {
+                double orig = p[j];
+
+                p[j] = orig + h[j];
+                double[] rp = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
+
+                p[j] = orig;
+                double[] rm = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
+
+                //p[j] = orig;
+
+                for (int i = 0; i < m; i++) {
+                    double d = (rp[i] - rm[i]) / (h[j]);
+                    if (!Double.isFinite(d)) d = 0.0;
+                    J[i][j] = d;
+                }
+            }
+
+
+
+
+
+
+
+
+            RealVector value    = new ArrayRealVector(resid, false);
+            RealMatrix jacobian = new Array2DRowRealMatrix(J, false);
+            return new Pair<>(value, jacobian);
+        };
+
+        // Ziel = 0-Vector (weil Modell bereits Residuen liefert)
+        RealVector target = new ArrayRealVector(new double[m]);
+        RealVector startVec = new ArrayRealVector(start, false);
+
+        LeastSquaresProblem problem = new LeastSquaresBuilder()
+                .start(startVec)
+                .target(target)
+                .model(model)
+                .maxEvaluations(2000)
+                .maxIterations(2000)
+                .checkerPair(new SimpleVectorValueChecker(1e-10, 1e-10))
+                .build();
+
+        LeastSquaresOptimizer optimizer = new LevenbergMarquardtOptimizer();
+        LeastSquaresOptimizer.Optimum opt = optimizer.optimize(problem);
+
+        // Logging (optional)
+        double[] residFinal = this.berechnenResiduumEinfach(opt.getPoint().toArray(), lowVerteilung, zMittelwert);
+        double f = 0.0; for (double r : residFinal) f += r * r;
+        System.out.printf("[Hipparchus minlm] eval=%d it=%d, f=%.6e%n",
+                opt.getEvaluations(), opt.getIterations(), f);
+
+        return opt.getPoint().toArray(); // reduzierter Vektor (Einfach)
+    }
+
+
+    public static double[] computeAbsoluteStep2Point(double[] x0, double[] relStep) {
+        final double rstep = Math.sqrt(Math.ulp(1.0)); // ≈ 1.49e-8
+        final int n = x0.length;
+
+        double[] sign = new double[n];
+        for (int i = 0; i < n; i++) sign[i] = (x0[i] >= 0.0) ? 1.0 : -1.0; // 1 bei x0==0
+
+        double[] absStep = new double[n];
+
+        if (relStep == null) {
+            for (int i = 0; i < n; i++) {
+                absStep[i] = rstep * sign[i] * Math.max(1.0, Math.abs(x0[i]));
+            }
+        } else {
+            if (relStep.length != n)
+                throw new IllegalArgumentException("relStep und x0 müssen gleich lang sein.");
+            for (int i = 0; i < n; i++) {
+                double a  = relStep[i] * sign[i] * Math.abs(x0[i]);
+                double dx = (x0[i] + a) - x0[i];
+                absStep[i] = (dx == 0.0)
+                        ? rstep * sign[i] * Math.max(1.0, Math.abs(x0[i]))
+                        : a;
+            }
+        }
+        return absStep;
+    }
+
+    /** Bequeme Überladung wie rel_step=None in SciPy. */
+    public static double[] computeAbsoluteStep2Point(double[] x0) {
+        return computeAbsoluteStep2Point(x0, null);
+    }
+
 
 
 

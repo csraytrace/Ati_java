@@ -96,6 +96,7 @@ public final class XrfFixture {
                 0.05,
                 3,
                 null,
+                null,
                 null
         );
     }

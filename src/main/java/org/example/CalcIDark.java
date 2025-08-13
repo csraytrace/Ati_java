@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 import java.util.Locale;
+import java.util.ArrayList;
 
 import org.apache.commons.math3.optim.nonlinear.scalar.noderiv.BOBYQAOptimizer;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -40,6 +41,9 @@ public class CalcIDark {
     private final int darkI = 12;
     private int indexMaxKonz = 1;
     private double maxValKonz = 1;
+    private Probe probeBind;
+    private int [] indexBind;
+    private Verbindung binderProbe;
 
     public CalcIDark(
             String dateipfad,
@@ -72,17 +76,25 @@ public class CalcIDark {
             double totschicht,
             double activeLayer,
             List<Verbindung> filter_röhre,
-            List<Verbindung> filter_det
+            List<Verbindung> filter_det,
+            Verbindung binder
 
     ) {
-        this.calcDark = new CalcI(dateipfad, probe, röhrenTyp, röhrenmaterial,
+        assertBinderAllZBelowDarkI(binder);
+        Probe effectiveProbe = (binder == null) ? probe : addMissingBinderElementsToProbe(probe, binder);
+
+        probeBind = effectiveProbe;
+        binderProbe = binder;
+        indexBind = mapBinderElementsToProbeIndicesOrThrow();
+
+        this.calcDark = new CalcI(dateipfad, effectiveProbe, röhrenTyp, röhrenmaterial,
                 einfallswinkelalpha, einfallswinkelbeta, fensterwinkel, sigma,
                 charzucontL, fenstermaterialRöhre, fensterdickeRöhre, raumwinkel, röhrenstrom,
                 emin, emax, step, messzeit, charzucont, fenstermaterialDet, fensterdickeDet,
                 phiDet, kontaktmaterial, kontaktmaterialdicke, bedeckungsfaktor, palphaGrad,
                 pbetaGrad, detektormaterial, totschicht, activeLayer, filter_röhre, filter_det);
 
-        Probe probeFiltered = probe.filterByMinZ(darkI);
+        Probe probeFiltered = effectiveProbe.filterByMinZ(darkI);
         this.calcFiltered = new CalcI(dateipfad, probeFiltered, röhrenTyp, röhrenmaterial,
                 einfallswinkelalpha, einfallswinkelbeta, fensterwinkel, sigma,
                 charzucontL, fenstermaterialRöhre, fensterdickeRöhre, raumwinkel, röhrenstrom,
@@ -93,8 +105,99 @@ public class CalcIDark {
 
         Dark = calcDark.werteVorbereitenAlle();
         Filtered = calcFiltered.werteVorbereitenAlle();
+
+
     }
 
+    public int[] getIndexBind() {
+        return indexBind == null ? null : indexBind.clone();
+    }
+
+    private Probe addMissingBinderElementsToProbe(Probe probe, Verbindung binder) {
+        if (binder == null) return probe;
+
+        // vorhandene Z der Probe in ein Set
+        List<Integer> probeZ = probe.getElementZNumbers();
+        java.util.Set<Integer> seenZ = new java.util.HashSet<>(probeZ);
+
+        // Binder-Symbole und -Z lesen (Index-weise korreliert)
+        String[] binderSym = binder.getSymbole();
+        List<Double> binderZ = binder.getZ_List();
+
+        Probe p = probe; // evtl. schrittweise erweitern
+        int n = Math.min(binderSym.length, binderZ.size());
+        for (int i = 0; i < n; i++) {
+            int Z = (int) Math.round(binderZ.get(i));
+            if (!seenZ.contains(Z)) {
+                // Element fehlt in Probe → anhängen
+                p = p.withAddedElement(binderSym[i]);
+                seenZ.add(Z);
+            }
+        }
+        return p;
+    }
+
+
+    private void assertBinderAllZBelowDarkI(Verbindung binder) {
+        if (binder == null) return; // nichts zu prüfen
+
+        List<Double> zList = binder.getZ_List(); // Z-Werte der Binder-Verbindung
+        List<Integer> offending = new ArrayList<>();
+
+        for (double z : zList) {
+            int Zi = (int) Math.round(z);
+            if (Zi >= darkI) offending.add(Zi);
+        }
+
+        if (!offending.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Binder enthält Elemente mit Z >= " + darkI + ": " + offending
+            );
+        }
+    }
+
+
+    private int[] mapBinderElementsToProbeIndicesOrThrow() {
+        if (binderProbe == null) return new int[0];
+
+        // Map: Z -> Index in der Probe (erster Treffer gewinnt)
+        java.util.List<Integer> probeZ = probeBind.getElementZNumbers();
+        java.util.Map<Integer, Integer> zToIdx = new java.util.HashMap<>();
+        for (int i = 0; i < probeZ.size(); i++) {
+            zToIdx.putIfAbsent(probeZ.get(i), i);
+        }
+
+        // Binder-Zahlen & -Symbole (parallel)
+        java.util.List<Double> binderZ = binderProbe.getZ_List();
+        String[] binderSym = binderProbe.getSymbole();
+        int n = Math.min(binderZ.size(), binderSym.length);
+
+        int[] indices = new int[n];
+        java.util.List<String> missing = new java.util.ArrayList<>();
+
+        for (int i = 0; i < n; i++) {
+            int Z = (int) Math.round(binderZ.get(i));
+            Integer idx = zToIdx.get(Z);
+            if (idx == null) {
+                // sammeln für aussagekräftige Fehlermeldung
+                String sym = binderSym[i];
+                missing.add("Z=" + Z + " (Symbol=" + sym + ")");
+                indices[i] = -1; // Platzhalter; wird gleich via Exception abgelehnt
+            } else {
+                indices[i] = idx;
+            }
+        }
+
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(
+                    "Binder-Element(e) nicht in der Probe gefunden: " +
+                            String.join(", ", missing) +
+                            ". Erweitere die Probe vorher (z.B. withAddedElement) oder passe den Binder an."
+            );
+        }
+
+        return indices;
+    }
 
 
 
@@ -106,6 +209,77 @@ public class CalcIDark {
         }
         return result;
     }
+
+
+
+    private double[] lowKonBeBinderAware(double lowKon, double[] lowVerteilung, double sumParams) {
+        // Kein Binder -> Standard
+        if (binderProbe == null) {
+            return lowKonBe(lowKon, lowVerteilung);
+        }
+
+        // Mapping sicherstellen
+        if (indexBind == null) {
+            indexBind = mapBinderElementsToProbeIndicesOrThrow();
+        }
+
+        // Low-Indizes der Probe bestimmen
+        List<Integer> zNumbers = this.probeBind.getElementZNumbers();
+        int[] zArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
+        SplitResult zSplit = splitByZ(zArr, darkI);
+        int[] lowIdx = zSplit.indicesLow;
+        int totalElems = zArr.length;
+
+        // Lookup: ProbeIndex -> Position im Low-Vektor
+        int[] probeIdxToLowPos = new int[totalElems];
+        java.util.Arrays.fill(probeIdxToLowPos, -1);
+        for (int p = 0; p < lowIdx.length; p++) {
+            probeIdxToLowPos[lowIdx[p]] = p;
+        }
+
+        // Binder-Konzentrationen auf Low-Reihenfolge mappen
+        double[] binderConc = binderProbe.getKonzentrationen(); // evtl. extern skaliert
+        double[] binderLow  = new double[lowIdx.length];
+        for (int i = 0; i < binderConc.length; i++) {
+            int probeIndex = (i < indexBind.length ? indexBind[i] : -1);
+            if (probeIndex < 0 || probeIndex >= totalElems) continue;
+            int pos = probeIdxToLowPos[probeIndex];
+            if (pos >= 0) binderLow[pos] += binderConc[i];
+        }
+
+        // Summe Binderanteile (nach evtl. externer Skalierung)
+        double sumBinder = 0.0;
+        for (double b : binderConc) sumBinder += b;
+
+        double denom = Math.max(sumParams, 1e-300);
+        if (sumBinder >= (lowKon / denom)) {
+            System.err.printf(
+                    "WARNUNG: Binderanteil (%.6f) >= lowKon/Σparams (%.6f). Verwende Binder-Verteilung für Low-Seite.%n",
+                    sumBinder, (lowKon / denom)
+            );
+            // Nutze Binder-Verteilung (auf Low gemappt) als Verteilung für lowKon
+            return lowKonBe(lowKon, binderLow);
+        }
+
+        // Rest über die Basis-Low-Verteilung
+        double rest = lowKon - sumBinder * sumParams;
+        if (rest < 0) rest = 0.0;
+
+        double[] low = lowKonBe(rest, lowVerteilung);
+
+        // Binder additiv (skaliert mit Σparams)
+        if (sumParams != 0.0) {
+            double scale = sumParams;
+            for (int i = 0; i < low.length; i++) {
+                low[i] += binderLow[i] * scale;
+            }
+        }
+        return low;
+    }
+
+
+
+
 
     private double[] normiereDaten(double[] daten) {
         double sum = 0.0;
@@ -188,8 +362,12 @@ public class CalcIDark {
         }
         Startkonzentration[0] = x;
 
-        double [] konz_low_start = lowKonBe(Startkonzentration[0],low_verteilung);
-        double [] konz_high_start = lowKonBe(1 - Startkonzentration[0],relKonz);
+        double sumParams = 0.0;
+        for (double v : Startkonzentration) sumParams += v;
+        double[] konz_low_start = lowKonBeBinderAware(Startkonzentration[0], low_verteilung, sumParams);
+        //double [] konz_low_start = lowKonBe(Startkonzentration[0],low_verteilung);
+        double[] konz_high_start = Arrays.copyOfRange(Startkonzentration, 1, Startkonzentration.length);
+        //double [] konz_high_start = lowKonBe(1 - Startkonzentration[0],relKonz);
 
         int gesamtLen = z_split.indicesLow.length + z_split.indicesHigh.length;
         double[] gesamtKonz = new double[gesamtLen];
@@ -332,9 +510,16 @@ public class CalcIDark {
     }
 
 
+    public double[] berechnenResiduumEinfach(double[] params,
+                                             double[] low_verteilung,
+                                             double Z_mittelwert) {
+        return berechnenResiduumEinfachMitBinder(params, low_verteilung, Z_mittelwert, null);
+    }
 
 
-    public double [] berechnenResiduumEinfach(double [] params, double [] low_verteilung, double Z_mittelwert)
+
+
+    public double [] berechnenResiduumEinfachMitBinder(double [] params, double [] low_verteilung, double Z_mittelwert, Verbindung binder)
     {
 
         double [] konzentration = params.clone();
@@ -344,8 +529,12 @@ public class CalcIDark {
         int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
         SplitResult z_split = splitByZ(zNumbersArr, darkI);
 
+        double sumParams = 0.0; for (double v : konzentration) sumParams += v;
+        sumParams += maxValKonz;
+        double[] konz_low_start = lowKonBeBinderAware(konzentration[0], low_verteilung, sumParams);
 
-        double [] konz_low_start = lowKonBe(konzentration[0],low_verteilung);
+
+        //double [] konz_low_start = lowKonBe(konzentration[0],low_verteilung);
         double[] konz_high_start = Arrays.copyOfRange(params, 1, params.length);
         konz_high_start = insertAt(konz_high_start, indexMaxKonz - 1, maxValKonz);
 
@@ -670,7 +859,12 @@ public class CalcIDark {
         double[] alg_angepasst = applyZAnpassen(optimizedParamsGanz,lowVerteilung,zMittelwert);
 
         // 2. Konzentrationsvektor erzeugen
-        double[] konz_low = lowKonBe(alg_angepasst[0], lowVerteilung);
+
+        double sumParams = 0.0; for (double v : alg_angepasst) sumParams += v;
+        double[] konz_low = lowKonBeBinderAware(alg_angepasst[0], lowVerteilung, sumParams);
+
+
+        //double[] konz_low = lowKonBe(alg_angepasst[0], lowVerteilung);
         double[] konz_high = Arrays.copyOfRange(alg_angepasst, 1, alg_angepasst.length);
         //double[] konz_high = lowKonBe(1 - optimizedParams[0], Arrays.copyOfRange(optimizedParams, 1, optimizedParams.length));
 

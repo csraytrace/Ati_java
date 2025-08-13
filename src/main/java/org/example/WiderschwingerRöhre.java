@@ -51,7 +51,8 @@ public class WiderschwingerRöhre extends RöhreBasis {
     protected double getSigma(double E) {
         double Z = roehrenMaterial.Z_gemittelt();
         double U = Emax / E;
-        double exp = 1.0314 - 0.0032 * Z + 0.0047 * Emax;
+        //double exp = 1.0314 - 0.0032 * Z + 0.0047 * Emax;
+        double exp = sigmaConst - 0.0032 * Z + 0.0047 * Emax;
         return 1.36e9 * Z * Math.pow(U - 1, exp);
     }
 

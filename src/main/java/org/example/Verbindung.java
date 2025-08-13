@@ -345,6 +345,13 @@ public class Verbindung {
     }
 
 
+    public void multipliziereKonzentrationen(double faktor) {
+        for (int i = 0; i < konzentrationen.length; i++) {
+            konzentrationen[i] *= faktor;
+        }
+    }
+
+
 
 
 }

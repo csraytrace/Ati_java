@@ -50,7 +50,8 @@ public class LoveScottRöhre extends RöhreBasis {
     protected double getSigma(double E) {
         double Z = roehrenMaterial.Z_gemittelt();
         double U = Emax / E;
-        double exp = 1.109 - 0.00435 * Z + 0.00175 * Emax;
+        //double exp = 1.109 - 0.00435 * Z + 0.00175 * Emax;
+        double exp = sigmaConst - 0.00435 * Z + 0.00175 * Emax;
         return 1.35e9 * Z * Math.pow(U - 1, exp);
     }
 

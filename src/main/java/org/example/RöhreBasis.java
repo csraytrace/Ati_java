@@ -146,7 +146,7 @@ public abstract class RöhreBasis {
             double lnU = Math.log(U);
             double zQ = zZaehler * lnU / (zNenner + lnU);
             double sigma = getSigma(E);
-            sigma *= sigmaConst;            // um das Sigma selbst zu verändern = eigenes Spektrum
+            //sigma *= sigmaConst;            // um das Sigma selbst zu verändern = eigenes Spektrum
 
             double xi = tauA[i] * EinfallswinkelalphaCos / EinfallswinkelbetaCos;
          //   if (Math.abs(Math.toDegrees(Math.acos(EinfallswinkelbetaCos)) - 75) > 1e-6){

@@ -203,6 +203,61 @@ public class Probe {
     }
 
 
+    public Probe withAddedElement(String neuesSymbol) {
+        // 1) Aktiv-Flags der bestehenden Elemente sichern
+        double neueIntensitaet = 1;
+        List<List<Boolean>> aktiveUebergaengeVorher = new ArrayList<>();
+        for (int i = 0; i < elemente.size(); i++) {
+            List<Übergang> uebergListe = uebergaengeProElement.get(i);
+            List<Boolean> flags = new ArrayList<>(uebergListe.size());
+            for (Übergang u : uebergListe) {
+                flags.add(u.isAktiv());
+            }
+            aktiveUebergaengeVorher.add(flags);
+        }
+
+        // 2) Symbol- & Intensitätslisten aufbauen (alt + neu)
+        List<String> symboleNeu = new ArrayList<>(elemente.size() + 1);
+        for (Element el : elemente) {
+            symboleNeu.add(el.getSymbol());
+        }
+        symboleNeu.add(neuesSymbol);
+
+        List<Double> intensNeu = new ArrayList<>(intensitaeten.length + 1);
+        for (double v : intensitaeten) {
+            intensNeu.add(v);
+        }
+        intensNeu.add(neueIntensitaet);
+
+        // 3) Neue Probe erzeugen (nutzt gleichen dateipfad/Emin/Emax/step)
+        Probe neueProbe = new Probe(
+                symboleNeu,
+                this.dateipfad,
+                this.Emin,
+                this.Emax,
+                this.step,
+                intensNeu
+        );
+
+        // 4) Aktiv-Flags der bisherigen Elemente auf die neue Probe übertragen
+        for (int i = 0; i < elemente.size(); i++) {
+            List<Boolean> flagsAlt = aktiveUebergaengeVorher.get(i);
+            List<Übergang> listeNeu = neueProbe.getUebergaengeProElement().get(i);
+            for (int k = 0; k < Math.min(flagsAlt.size(), listeNeu.size()); k++) {
+                listeNeu.get(k).setAktiv(flagsAlt.get(k));
+            }
+        }
+
+        // 5) Neues Element (am Ende) bleibt mit Default-Flags.
+        //    Falls gewünscht, kann der Aufrufer anschließend z.B.:
+        //    neueProbe.setzeUebergangAktivFuerElementKAlpha(elemente.size());
+
+        return neueProbe;
+    }
+
+
+
+
 
 
 

@@ -3,27 +3,44 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-public class probieren3 {
+public class probieren6 {
 
-    public static void main(String[] args) {
+    public static void main(String[] args)
 
 
-        List<String> elementSymboleDark = Arrays.asList("Si","Cu","O");
-        List<Integer> elementIntDark = Arrays.asList(1,12,55);
+    {
+
+
+        List<String> elementSymboleDark = Arrays.asList("Si", "Cu", "O");
+        List<Integer> elementIntDark = Arrays.asList(1, 12, 55);
 
         double Emin = 0;
         double Emax = 30;
         double step = 0.01;
 
-        Probe probeDark = new Probe(elementSymboleDark , "MCMASTER.TXT", Emin, Emax, step,elementIntDark );
+        Probe probeDark = new Probe(elementSymboleDark, "MCMASTER.TXT", Emin, Emax, step, elementIntDark);
 
-        //probe.setzeUebergangAktivFuerElement(0, "K", "L2");
-        //probe.setzeUebergangAktivFuerElement(0, "l3", "m1");
-        //probe.setzeUebergangAktivFuerElement(0, "K", "L3");
-        //probe.setzeUebergangAktivFuerElement(0, "K", "L1");
+
         probeDark.setzeUebergangAktivFuerElementKAlpha(0);
         probeDark.setzeUebergangAktivFuerElementKAlpha(1);
-        //probe.setzeUebergangAktivFuerElementLAlpha(1);
+
+
+        Funktionen f = new FunktionenImpl();
+
+
+        String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
+
+        Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
+
+
+        v1.multipliziereKonzentrationen(0.5);
+
+
+        double[] konz = v1.getKonzentrationen();
+        String[] symbol = v1.getSymbole();
+        for (int i = 0; i < konz.length; i++) {
+            System.out.printf("Konzentration Komponente %s: %.6f%n", symbol[i], konz[i]);
+        }
 
 
 
@@ -58,47 +75,21 @@ public class probieren3 {
                 3,                // activeLayer (mm)
                 null,            // Filter-Liste
                 null,
-                null
+                v1
         );
 
         List<Double> darkMatrixList = Arrays.asList(1.);
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
         double Z = 17;
 
+        int[] index = calcDark.getIndexBind();
 
 
-        double[] relKonzDark = calcDark.startwerte(Z,darkMatrix);
-
-        System.out.println("Startkonzentrationen in %:");
-        for (int i = 0; i < relKonzDark.length; i++) {
-            System.out.printf("Element %d: %.4f %%\n", i, relKonzDark[i]);
-        }
+        System.out.println("Indices: " + java.util.Arrays.toString(index));
 
 
-
-        double[] optimum = calcDark.optimizeWithBOBYQAEinfach( Z,darkMatrix);
-        System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum,darkMatrix,Z);
-        System.out.println("Optimale Parameter: " + Arrays.toString(optimum));
-        //calcDark.printOptimizedResult(optimum,darkMatrix,Z);
-        double[] ergebnis = calcDark.ergebnisEinfach(optimum);
-        System.out.println("Optimale Parameter: " + Arrays.toString(ergebnis));
-        calcDark.printOptimizedResult(ergebnis,darkMatrix,Z);
-
-
-
-        double[] res1 = {35.9572,29.6599, 34.3829 };
-        double [] res_be1 = calcDark.berechnenResiduum(res1, darkMatrix,Z);
-
-        for (int i = 0; i < res_be1.length; i++) {
-            System.out.printf("Res %d: %.2f %%\n", i, res_be1[i]);
-        }
 
 
 
     }
-
-
-
-
-}
+    }

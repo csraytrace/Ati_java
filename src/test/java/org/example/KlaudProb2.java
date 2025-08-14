@@ -3,15 +3,15 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-public class KlaudProbe {
-
+public class KlaudProb2 {
 
 
     public static void main(String[] args) {
 
 
-        List<String> elementSymboleDark = Arrays.asList( "C", "N", "O", "Si", "Ti");
-        List<Integer> elementIntDark = Arrays.asList(  0, 0, 0, 8785,98652);
+        List<String> elementSymboleDark = Arrays.asList("O", "Al", "Ti", "Cr", "Zn", "Ce");
+        List<Integer> elementIntDark = Arrays.asList(0, 1401, 31881, 56833, 99343, 21562);
+
 
 
         double Emin = 0;
@@ -26,8 +26,8 @@ public class KlaudProbe {
         probeDark.setzeUebergangAktivFuerElementKAlpha(2);
         probeDark.setzeUebergangAktivFuerElementKAlpha(3);
         probeDark.setzeUebergangAktivFuerElementKAlpha(4);
+        probeDark.setzeUebergangAktivFuerElementLAlpha(5);
         //probe.setzeUebergangAktivFuerElementLAlpha(1);
-
 
 
         Funktionen f = new FunktionenImpl();
@@ -35,12 +35,10 @@ public class KlaudProbe {
 
         String ver1 = "1 C38H76N2O2";
 
-        Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
+        Verbindung v1 = f.parseVerbindung(ver1, Emin, Emax, step, "McMaster.txt");
 
 
-        v1.multipliziereKonzentrationen(1/5.67);
-
-
+        v1.multipliziereKonzentrationen(1.04 / 5.52);
 
 
 //sigma=8.30349567e-01
@@ -79,15 +77,14 @@ public class KlaudProbe {
                 v1
         );
 
-        List<Double> darkMatrixList = Arrays.asList(0.,0.,1.);
+        //List<Double> darkMatrixList = Arrays.asList(5.,0.,0.,0.);
+        List<Double> darkMatrixList = Arrays.asList(5.);
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
-        double Z = 12.1;
+        double Z = 21.47;
 
         double[] optimum = calcDark.optimizeWithHIPPARCHUS_MINLM_Einfach(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
         calcDark.printOptimizedResultEinfach(optimum, darkMatrix, Z);
-
-
 
 
     }

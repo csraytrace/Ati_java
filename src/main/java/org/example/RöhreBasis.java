@@ -22,6 +22,8 @@ public abstract class RöhreBasis {
     protected List<Übergang> characteristicSpectrum;
     protected double[] gesamtSpektrum;
     protected List<Verbindung> Filter;
+    protected final double charzucont;
+    protected final double charzucontL;
 
     protected RöhreBasis(
             String roehrenMaterialName,
@@ -55,6 +57,8 @@ public abstract class RöhreBasis {
         this.step                   = step;
         this.messZeit               = messZeit;
         this.Filter                 = Filter;
+        this.charzucont             = charzucont;
+        this.charzucontL             = charzucontL;
 
 
         Funktionen f = new FunktionenImpl();
@@ -221,7 +225,16 @@ public abstract class RöhreBasis {
 
                 double Intensität = Konstante * RzuS_j_Liste.get(shellToIndex(Schale_von.name())+ i * 4) * Omega * p_jk
                         * fx * transF * roehrenStrom * messZeit * raumWinkel * roehrenMaterial.getKonzentrationen()[i]  //simpler Ansatz mit Multiplikation mit Konzentration
-                        * FilterAbsorption;
+                        * FilterAbsorption * charzucont;
+
+                if (Schale_von == Schale.L1 ||
+                        Schale_von == Schale.L2 ||
+                        Schale_von == Schale.L3) {
+                    Intensität *= charzucontL;
+
+                }
+
+
 
                 if (Intensität > 0) {
                     Übergang neuerUebergang = new Übergang(

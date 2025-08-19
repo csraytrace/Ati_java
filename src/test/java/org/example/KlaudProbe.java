@@ -53,7 +53,7 @@ public class KlaudProbe {
                 "Rh",             // Röhrenmaterial
                 20, 70,           // Einfallswinkel alpha, beta
                 0,                // Fensterwinkel
-                1.0314,                // sigma
+                8.30349567e-01,                // sigma
                 0.3,                // charzucontL
                 "Be",             // Fenstermaterial Röhre
                 125,              // Fensterdicke Röhre (µm)

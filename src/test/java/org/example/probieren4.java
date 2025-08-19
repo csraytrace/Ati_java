@@ -72,32 +72,6 @@ public class probieren4 {
 
 
 
-
-
-
-        try {
-            System.out.println("\n==== ALGLIB mindf: Testlauf ====");
-            double[] optimumAlglib = calcDark.optimizeWithALGLIB_DF(Z, darkMatrix);
-            System.out.println("Optimale Parameter (ALGLIB): " + Arrays.toString(optimumAlglib));
-
-            // Ergebnis ausgeben (Z-mittel, Intensitäten etc.)
-            calcDark.printOptimizedResult(optimumAlglib, darkMatrix, Z);
-
-            // Residuen + f-Endwert ausgeben
-            double[] residAlglib = calcDark.berechnenResiduum(optimumAlglib, darkMatrix, Z);
-            double fAlglib = 0.0;
-            for (double r : residAlglib) fAlglib += r * r;
-
-            System.out.printf("Residuen (ALGLIB): %s%n", Arrays.toString(residAlglib));
-            System.out.printf("Summe der quadrierten Residuen (ALGLIB): %.6e%n", fAlglib);
-
-        } catch (Throwable t) {
-            // Falls ALGLIB nicht auf dem Classpath ist oder mindf nicht verfügbar: freundlich degradieren
-            System.err.println("ALGLIB-Test übersprungen: " + t.getMessage());
-            // Optional: t.printStackTrace();
-        }
-
-
     }
 
 

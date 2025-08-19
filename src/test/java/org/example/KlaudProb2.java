@@ -12,8 +12,6 @@ public class KlaudProb2 {
         List<String> elementSymboleDark = Arrays.asList("O", "Al", "Ti", "Cr", "Zn", "Ce");
         List<Integer> elementIntDark = Arrays.asList(0, 1401, 31881, 56833, 99343, 21562);
 
-
-
         double Emin = 0;
         double Emax = 40;
         double step = 0.01;
@@ -82,9 +80,9 @@ public class KlaudProb2 {
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
         double Z = 21.47;
 
-        double[] optimum = calcDark.optimizeWithHIPPARCHUS_MINLM_Einfach(Z, darkMatrix);
+        double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum, darkMatrix, Z);
+        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
 
 
     }

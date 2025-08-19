@@ -3,9 +3,6 @@ package org.example;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.example.XrfFixture.DARK_MATRIX;
-import static org.example.XrfFixture.Z_MITTEL;
-
 public class HipparchusTest2 {
 
 
@@ -68,9 +65,9 @@ public class HipparchusTest2 {
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
         double Z = 17;
 
-        double[] optimum = calcDark.optimizeWithHIPPARCHUS_MINLM_Einfach(Z, darkMatrix);
+        double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum, darkMatrix, Z);
+        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
 
 
 

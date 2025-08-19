@@ -14,9 +14,9 @@ public class NlHipparchus {
         double[] darkMatrix = DARK_MATRIX;
         double Z = Z_MITTEL;
 
-        double[] optimum = calcDark.optimizeWithHIPPARCHUS_MINLM_Einfach(Z, darkMatrix);
+        double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum, darkMatrix, Z);
+        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
 
 
 

@@ -83,9 +83,9 @@ public class KlaudProbe {
         double[] darkMatrix = darkMatrixList.stream().mapToDouble(Double::doubleValue).toArray();
         double Z = 12.1;
 
-        double[] optimum = calcDark.optimizeWithHIPPARCHUS_MINLM_Einfach(Z, darkMatrix);
+        double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResultEinfach(optimum, darkMatrix, Z);
+        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
 
 
 

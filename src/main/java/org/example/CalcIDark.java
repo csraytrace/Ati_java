@@ -1,21 +1,8 @@
 package org.example;
 
-
 import java.util.List;
 import java.util.Arrays;
-import java.util.stream.Collectors;
-import java.util.Locale;
 import java.util.ArrayList;
-
-import org.apache.commons.math3.optim.nonlinear.scalar.noderiv.BOBYQAOptimizer;
-import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
-import org.apache.commons.math3.optim.nonlinear.scalar.ObjectiveFunction;
-import org.apache.commons.math3.optim.InitialGuess;
-import org.apache.commons.math3.optim.MaxEval;
-import org.apache.commons.math3.optim.PointValuePair;
-import org.apache.commons.math3.optim.SimpleBounds;
-
-
 
 import org.hipparchus.linear.Array2DRowRealMatrix;
 import org.hipparchus.linear.ArrayRealVector;
@@ -27,9 +14,6 @@ import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresOptimizer;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOptimizer;
 import org.hipparchus.util.Pair;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.*;
-
-
-
 import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
 
 public class CalcIDark {
@@ -83,7 +67,6 @@ public class CalcIDark {
 
     ) {
         assertBinderAllZBelowDarkI(binder);
-        //Probe effectiveProbe = (binder == null) ? probe : addMissingBinderElementsToProbe(probe, binder);
         ProbeAddResult Probeneu = addMissingBinderElementsToProbeCount(probe, binder);
         Probe effectiveProbe = Probeneu.probe;
         addedDark = Probeneu.added;
@@ -171,11 +154,6 @@ public class CalcIDark {
     }
 
 
-
-
-
-
-
     private void assertBinderAllZBelowDarkI(Verbindung binder) {
         if (binder == null) return; // nichts zu prüfen
 
@@ -238,7 +216,6 @@ public class CalcIDark {
     }
 
 
-    // Kleiner Rückgabetyp für beide Werte
     private record BinderSummary(double total, double zAvg) {}
 
     private BinderSummary binderSummaryOrZero() {
@@ -281,9 +258,6 @@ public class CalcIDark {
     }
 
 
-
-
-
     private double[] lowKonBe(double lowKon, double[] verteilung) {
         double[] norVert = normiereDaten(verteilung); // eigene Hilfsmethode
         double[] result = new double[norVert.length];
@@ -292,7 +266,6 @@ public class CalcIDark {
         }
         return result;
     }
-
 
 
     private double[] lowKonBeBinderAware(double lowKon, double[] lowVerteilung, double sumParams) {
@@ -361,9 +334,6 @@ public class CalcIDark {
     }
 
 
-
-
-
     private double[] normiereDaten(double[] daten) {
         double sum = 0.0;
         for (double d : daten) sum += d;
@@ -371,7 +341,6 @@ public class CalcIDark {
         for (int i = 0; i < daten.length; i++) out[i] = daten[i] / sum;
         return out;
     }
-
 
     public static double[] ZAnpassen(
             double[] konzLow, int[] zLow, double[] konzHigh, int[] zHigh, double zGewuenscht) {
@@ -399,7 +368,6 @@ public class CalcIDark {
         if (zGewuenscht < zMittelLow || zGewuenscht > zMittelHigh) {
             //System.out.println(zMittelLow + " " + zMittelHigh + " " + zGewuenscht + " Wert muss dazwischen liegen!");
             System.err.println("WARNUNG: (Z = "+ zGewuenscht+") nicht in den Grenzen: " + zMittelLow + "<" + "Z" + "<" +  zMittelHigh);
-            // throw new IllegalArgumentException("Z_gemittel kann nicht erreicht werden!");
             return new double[]{
                     Math.abs(konzNeuLow / konzSumLow),
                     Math.abs(konzNeuHigh / konzSumHigh)
@@ -411,12 +379,7 @@ public class CalcIDark {
     }
 
 
-
     public double[] startwerte(double Z_mittelwert, double [] low_verteilung) {
-
-        //double[] lowVerteilungNeu = appendZeros(low_verteilung, addedDark);
-        //System.out.println("low_verteilung"+Arrays.toString(low_verteilung));
-        //System.out.println("lowVerteilungNeu"+Arrays.toString(lowVerteilungNeu));
 
         double [] gemInt = calcFiltered.konzentration;
         double[] relKonz = CalcI.berechneRelKonzentrationen(calcFiltered, Filtered);
@@ -431,8 +394,6 @@ public class CalcIDark {
 
         double sumlow = 0.0;
         for (double v : low_verteilung) sumlow += v;
-
-
         List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
         int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
         SplitResult z_split = splitByZ(zNumbersArr, darkI);
@@ -442,8 +403,8 @@ public class CalcIDark {
             Startkonzentration[i + 1] = relKonz[i];
         }
 
-        double konzBinder = binderWerte.total();  // Zugriff auf 'total'
-        double zBinder = binderWerte.zAvg();   // Zugriff auf 'zAvg'
+        double konzBinder = binderWerte.total();
+        double zBinder = binderWerte.zAvg();
 
         double Z_mittelwerte_ohne_Binder = (Z_mittelwert - konzBinder * zBinder) / (1 - konzBinder);
 
@@ -461,9 +422,7 @@ public class CalcIDark {
         for (double v : Startkonzentration) sumParams += v;
 
         double[] konz_low_start = lowKonBeBinderAware(Startkonzentration[0], low_verteilung, sumParams);
-        //double [] konz_low_start = lowKonBe(Startkonzentration[0],low_verteilung);
         double[] konz_high_start = Arrays.copyOfRange(Startkonzentration, 1, Startkonzentration.length);
-        //double [] konz_high_start = lowKonBe(1 - Startkonzentration[0],relKonz);
 
         int gesamtLen = z_split.indicesLow.length + z_split.indicesHigh.length;
         double[] gesamtKonz = new double[gesamtLen];
@@ -473,7 +432,6 @@ public class CalcIDark {
         for (int i = 0; i < z_split.indicesHigh.length; i++) {
             gesamtKonz[z_split.indicesHigh[i]] = konz_high_start[i];
         }
-
         //double [] berechneteIntensitaetBasis = calcFiltered.berechneSummenintensitaetMitKonz(relKonz,average_geo);
         double [] berechneteIntensitaetBasis = calcFiltered.berechneSummenintensitaetMitKonz(konz_high_start,average_geo);
         double [] berechneteIntensitaetDark = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz,average_geo);
@@ -483,8 +441,6 @@ public class CalcIDark {
             Startkonzentration[1 + i] *= berechneteIntensitaetBasis[i] / berechneteIntensitaetDark[idx];
         }
         double[] startKonzAb = Arrays.copyOfRange(Startkonzentration, 1, Startkonzentration.length);
-
-
 
         x_y = ZAnpassen( low_verteilung, z_split.valuesLow, startKonzAb, z_split.valuesHigh, Z_mittelwerte_ohne_Binder);
         x = x_y[0] * (1 - konzBinder);;
@@ -506,150 +462,31 @@ public class CalcIDark {
         maxValKonz = maxVal;
         System.out.println("Startkonzentration: " + Arrays.toString(Startkonzentration));
 
-
         return Startkonzentration;
-
     }
 
-    public double [] berechnenResiduum(double [] params, double [] low_verteilung, double Z_mittelwert)
-    {
+
+    public double[] residuum(double[] params,
+                             double[] low_verteilung,
+                             double Z_mittelwert) {
 
         double [] konzentration = params.clone();
-        //konzentration=normiereDaten(konzentration);
-
-        //for (int i = 0; i < konzentration.length; i++) {
-        //    System.out.printf("Res %d: %.2f %%\n", i, konzentration[i]);
-        //}
-
-
-        List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
-        int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
-        SplitResult z_split = splitByZ(zNumbersArr, darkI);
-
-        //double[] high_verteilung = Arrays.copyOfRange(params, 1, params.length);
-
-        double [] konz_low_start = lowKonBe(konzentration[0],low_verteilung);
-        double[] konz_high_start = Arrays.copyOfRange(params, 1, params.length);
-        //double [] konz_high_start = lowKonBe(1 - konzentration[0],high_verteilung);
-
-        int gesamtLen = z_split.indicesLow.length + z_split.indicesHigh.length;
-
-        //System.out.println(konzentration[0]);
-
-        //System.out.printf("konzentration[0]: %.2f %%\n", konzentration[0]);
-        //System.out.printf("konzentration[0]: %.2f %%\n", 1-konzentration[0]);
-
-        //for (int i = 0; i < konz_low_start.length; i++) {
-         //   System.out.printf("konz_low_start %d: %.2f %%\n", i, konz_low_start[i]);
-        //}
-
-        //for (int i = 0; i < konz_high_start.length; i++) {
-         //   System.out.printf("konz_high_start %d: %.2f %%\n", i, konz_high_start[i]);
-        //}
-
-
-
-        //Effekt von Binder auf konz_low_start
-
-        double[] x_y = ZAnpassen(konz_low_start, z_split.valuesLow, konz_high_start, z_split.valuesHigh, Z_mittelwert);
-        //System.out.println(x_y[0]+"  "+x_y[1]);
-
-        for (int i = 0; i < konz_low_start.length; i++) {
-            konz_low_start[i] *= x_y[0];
-        }
-        //for (int i = 0; i < konz_low_start.length; i++) {
-         //  System.out.printf("konz_low_start %d: %.2f %%\n", i, konz_low_start[i]);
-        //}
-
-        for (int i = 0; i < konz_high_start.length; i++) {
-            konz_high_start[i] *= x_y[1];
-        }
-
-        //for (int i = 0; i < konz_high_start.length; i++) {
-        //   System.out.printf("konz_high_start %d: %.2f %%\n", i, konz_high_start[i]);
-        //}
-
-
-
-        double[] gesamtKonz = new double[gesamtLen];
-        for (int i = 0; i < z_split.indicesLow.length; i++) {
-            gesamtKonz[z_split.indicesLow[i]] = konz_low_start[i];
-        }
-        for (int i = 0; i < z_split.indicesHigh.length; i++) {
-            gesamtKonz[z_split.indicesHigh[i]] = konz_high_start[i];
-        }
-
-
-        //for (int i = 0; i < gesamtKonz.length; i++) {
-        //    System.out.printf("gesamtKonz %d: %.2f %%\n", i, gesamtKonz[i]);
-        //}
-
-
-        double [] berechneteIntensitaetDark = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
-
-        double[] IbHigh = new double[z_split.indicesHigh.length];
-        for (int i = 0; i < z_split.indicesHigh.length; i++) {
-            IbHigh[i] = berechneteIntensitaetDark[z_split.indicesHigh[i]];
-        }
-
-        double geo = geoIbIg(IbHigh);
-        double [] berechneteIntensitaetDark1 = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz,geo);
-        double [] gemInt=calcFiltered.konzentration;
-
-        double[] diff = new double[z_split.indicesHigh.length];
-        for (int i = 0; i < z_split.indicesHigh.length; i++) {
-            int idx = z_split.indicesHigh[i];
-            //System.out.println("idx"+idx+"gemint"+gemInt[i]);
-            diff[i] = berechneteIntensitaetDark1[idx] - gemInt[i];
-
-            //System.out.printf("Index %d: gemessen = %.6f, berechnet = %.6f, Differenz = %.6f%n",
-             //       idx, gemInt[i], berechneteIntensitaetDark1[idx], diff[i]);
-        }
-        return diff;
-    }
-
-
-    public double[] berechnenResiduumEinfach(double[] params,
-                                             double[] low_verteilung,
-                                             double Z_mittelwert) {
-        return berechnenResiduumEinfachMitBinder(params, low_verteilung, Z_mittelwert, null);
-    }
-
-
-
-
-    public double [] berechnenResiduumEinfachMitBinder(double [] params, double [] low_verteilung, double Z_mittelwert, Verbindung binder)
-    {
-
-        double [] konzentration = params.clone();
-
         double sumlow = 0.0;
         for (double v : low_verteilung) sumlow += v;
 
-
         List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
         int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
         SplitResult z_split = splitByZ(zNumbersArr, darkI);
 
-
         double konzBinder = binderWerte.total();  // Zugriff auf 'total'
         double zBinder = binderWerte.zAvg();   // Zugriff auf 'zAvg'
-
         double Z_mittelwerte_ohne_Binder = (Z_mittelwert - konzBinder * zBinder) / (1 - konzBinder);
-
-
-        //double [] konz_low_start = lowKonBe(konzentration[0],low_verteilung);
         double[] konz_high_start = Arrays.copyOfRange(konzentration, 1, konzentration.length);
         konz_high_start = insertAt(konz_high_start, indexMaxKonz - 1, maxValKonz);
 
-
         int gesamtLen = z_split.indicesLow.length + z_split.indicesHigh.length;
-
         double [] konz_low_start_ohne_Binder = lowKonBe(konzentration[0],low_verteilung);
-
-
         double[] x_y = ZAnpassen(konz_low_start_ohne_Binder, z_split.valuesLow, konz_high_start, z_split.valuesHigh, Z_mittelwerte_ohne_Binder);
-
         double x = x_y[0] * (1 - konzBinder);
         double y = x_y[1] * (1 - konzBinder);
 
@@ -667,15 +504,6 @@ public class CalcIDark {
 
         double[] konz_low_start = lowKonBeBinderAware(konzentration[0], low_verteilung, sumParams);
 
-
-        //for (int i = 0; i < konz_low_start.length; i++) {
-        //    konz_low_start[i] *= x_y[0];
-        //}
-
-
-
-
-
         double[] gesamtKonz = new double[gesamtLen];
         for (int i = 0; i < z_split.indicesLow.length; i++) {
             gesamtKonz[z_split.indicesLow[i]] = konz_low_start[i];
@@ -683,12 +511,6 @@ public class CalcIDark {
         for (int i = 0; i < z_split.indicesHigh.length; i++) {
             gesamtKonz[z_split.indicesHigh[i]] = konz_high_start[i];
         }
-
-        //for (int i = 0; i < gesamtKonz.length; i++) {
-        //    System.out.printf("gesamtKonz %d: %.2f %%\n", i, gesamtKonz[i]);
-        //}
-        //System.out.println("maxValKonz"+maxValKonz);
-
 
         double [] berechneteIntensitaetDark = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
 
@@ -704,14 +526,11 @@ public class CalcIDark {
         double[] diff = new double[z_split.indicesHigh.length];
         for (int i = 0; i < z_split.indicesHigh.length; i++) {
             int idx = z_split.indicesHigh[i];
-            //System.out.println("idx"+idx+"gemint"+gemInt[i]);
             diff[i] = berechneteIntensitaetDark1[idx] - gemInt[i];
-
-            //System.out.printf("Index %d: gemessen = %.6f, berechnet = %.6f, Differenz = %.6f%n",
-             //      idx, gemInt[i], berechneteIntensitaetDark1[idx], diff[i]);
         }
         return diff;
     }
+
 
 
     public static double[] insertAt(double[] array, int index, double value) {
@@ -728,21 +547,6 @@ public class CalcIDark {
         }
         return result;
     }
-
-    public double [] testberechnenResiduumEinfach(double [] params, double [] low_verteilung, double Z_mittelwert, int index, double konz)
-    {
-        maxValKonz=konz;
-        indexMaxKonz=index;
-
-        return berechnenResiduumEinfach(params, low_verteilung, Z_mittelwert);
-    }
-
-
-
-
-
-
-
 
     // Mini-Klasse als Rückgabecontainer:
     public static class SplitResult {
@@ -807,98 +611,10 @@ public class CalcIDark {
     }
 
 
-    public double[] optimizeWithBOBYQA(
-            double zMittelwert,
-            double[] lowVerteilung
-
-    ) {
-        double [] start = startwerte(zMittelwert,lowVerteilung);
-        int dim = start.length;
-        int numberOfInterpolationPoints = 2 * dim + 1; // Empfehlung: 2*N+1
-
-        // Bounds automatisch: 0.0 bis 1.0
-        double[] lower = new double[dim];
-        double[] upper = new double[dim];
-        Arrays.fill(lower, 0.0);
-        Arrays.fill(upper, 1.0);
-
-        // Ziel: Summe der quadrierten Residuen minimieren
-        BOBYQAOptimizer optimizer = new BOBYQAOptimizer(numberOfInterpolationPoints);
-
-        ObjectiveFunction objective = new ObjectiveFunction(params -> {
-            double[] resid = this.berechnenResiduum(params, lowVerteilung, zMittelwert);
-            double sumSq = 0.0;
-            for (double v : resid) sumSq += v * v;
-            return sumSq;
-        });
-
-        PointValuePair result = optimizer.optimize(
-                objective,
-                GoalType.MINIMIZE,
-                new InitialGuess(start),
-                new MaxEval(2000),
-                new SimpleBounds(lower, upper)
-        );
-
-        return result.getPoint(); // optimierte Parameter
-    }
-
-
-
-    public double[] optimizeWithBOBYQAEinfach(
-            double zMittelwert,
-            double[] lowVerteilung
-
-    ) {
-        double [] start1 = startwerte(zMittelwert,lowVerteilung);
-        double[] start = new double[start1.length - 1];
-        for (int i = 0, j = 0; i < start1.length; i++) {
-            if (i != indexMaxKonz) {
-                start[j++] = start1[i];
-            }
-        }
-        int dim = start.length;
-        int numberOfInterpolationPoints = 2 * dim + 1; // Empfehlung: 2*N+1
-
-        // Bounds automatisch: 0.0 bis 1.0
-        double[] lower = new double[dim];
-        double[] upper = new double[dim];
-        Arrays.fill(lower, 0.0);
-        Arrays.fill(upper, 2.0);
-
-        // Ziel: Summe der quadrierten Residuen minimieren
-        BOBYQAOptimizer optimizer = new BOBYQAOptimizer(numberOfInterpolationPoints);
-
-        ObjectiveFunction objective = new ObjectiveFunction(params -> {
-            double[] resid = this.berechnenResiduumEinfach(params, lowVerteilung, zMittelwert);
-            double sumSq = 0.0;
-            for (double v : resid) sumSq += v * v;
-            return sumSq;
-        });
-
-        PointValuePair result = optimizer.optimize(
-                objective,
-                GoalType.MINIMIZE,
-                new InitialGuess(start),
-                new MaxEval(2000),
-                new SimpleBounds(lower, upper)
-        );
-
-        return result.getPoint(); // optimierte Parameter
-    }
-
-
     public double [] ergebnisEinfach(double [] konz)
     {double [] ret = insertAt(konz,indexMaxKonz,maxValKonz);
-
-
         return normiereDaten(ret);
     }
-
-
-
-
-
 
 
     public void printOptimizedResult(
@@ -906,88 +622,19 @@ public class CalcIDark {
             double[] lowVerteilung,
             double zMittelwert
     ) {
-        // 1. Z-Split berechnen
-        List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
-        int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
-        SplitResult z_split = splitByZ(zNumbersArr, darkI);
-        //optimizedParams=KonzDark(zMittelwert,lowVerteilung);
-        //optimizedParams=normiereDaten(optimizedParams);
-
-        // 2. Konzentrationsvektor erzeugen
-        double[] konz_low = lowKonBe(optimizedParams[0], lowVerteilung);
-        double[] konz_high = Arrays.copyOfRange(optimizedParams, 1, optimizedParams.length);
-        //double[] konz_high = lowKonBe(1 - optimizedParams[0], Arrays.copyOfRange(optimizedParams, 1, optimizedParams.length));
-
-        double[] gesamtKonz = new double[z_split.indicesLow.length + z_split.indicesHigh.length];
-        for (int i = 0; i < z_split.indicesLow.length; i++) {
-            gesamtKonz[z_split.indicesLow[i]] = konz_low[i];
-        }
-        for (int i = 0; i < z_split.indicesHigh.length; i++) {
-            gesamtKonz[z_split.indicesHigh[i]] = konz_high[i];
-        }
-
-        // 3. Mittlere Ordnungszahl berechnen
-        double ordnungszahl_summe = 0.0;
-        double konz_summe = 0.0;
-        for (int i = 0; i < gesamtKonz.length; i++) {
-            ordnungszahl_summe += gesamtKonz[i] * zNumbersArr[i];
-            konz_summe += gesamtKonz[i];
-        }
-        double z_mittel_opt = ordnungszahl_summe / konz_summe;
-
-        // 4. Berechnete Intensitäten bestimmen
-        double[] berechneteIntensitaet = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
-
-        double[] IbHigh = new double[z_split.indicesHigh.length];
-        for (int i = 0; i < z_split.indicesHigh.length; i++) {
-            IbHigh[i] = berechneteIntensitaet[z_split.indicesHigh[i]];
-        }
-
-        double geo = geoIbIg(IbHigh);
-        double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz,geo);
-        //double[] arr = {29.6599, 34.3829, 35.9572};
-        //double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(arr,3.56e-09);
-
-
-
-
-        // 5. Ausgabe
-        System.out.println("===== BOBYQA-Ergebnis-Report =====");
-        System.out.println("konz_summe"+konz_summe);
-        System.out.println("Optimierte Konzentrationen: " + Arrays.toString(gesamtKonz));
-        System.out.printf("Optimierte mittlere Ordnungszahl: %.4f%n", z_mittel_opt);
-        System.out.println("Berechnete Intensitäten: " + Arrays.toString(berechneteIntensitaet1));
-        System.out.println("==================================");
-    }
-
-
-
-
-    public void printOptimizedResultEinfach(
-            double[] optimizedParams,
-            double[] lowVerteilung,
-            double zMittelwert
-    ) {
 
         double[] lowVerteilungNeu = appendZeros(lowVerteilung, addedDark);
-
         double [] optimizedParamsGanz = ergebnisEinfach(optimizedParams);
         // 1. Z-Split berechnen
         List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
         int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
         SplitResult z_split = splitByZ(zNumbersArr, darkI);
-        //optimizedParams=KonzDark(zMittelwert,lowVerteilung);
-        //optimizedParams=normiereDaten(optimizedParams);
+
 
         double konzBinder = binderWerte.total();  // Zugriff auf 'total'
         double zBinder = binderWerte.zAvg();   // Zugriff auf 'zAvg'
 
         double Z_mittelwerte_ohne_Binder = (zMittelwert - konzBinder * zBinder) / (1 - konzBinder);
-
-        //optimizedParamsGanz[0] = optimizedParamsGanz[0] - konzBinder;
-        //System.out.println("optimizedParamsGanz[0]"+optimizedParamsGanz[0]);
-
-
         double[] alg_angepasst = applyZAnpassen(optimizedParamsGanz,lowVerteilungNeu,Z_mittelwerte_ohne_Binder);
 
         for (int i = 0; i < alg_angepasst.length; i++) {
@@ -1001,9 +648,7 @@ public class CalcIDark {
         double[] konz_low = lowKonBeBinderAware(alg_angepasst[0] + konzBinder, lowVerteilungNeu, sumParams);
 
 
-        //double[] konz_low = lowKonBe(alg_angepasst[0], lowVerteilung);
         double[] konz_high = Arrays.copyOfRange(alg_angepasst, 1, alg_angepasst.length);
-        //double[] konz_high = lowKonBe(1 - optimizedParams[0], Arrays.copyOfRange(optimizedParams, 1, optimizedParams.length));
 
         double[] gesamtKonz = new double[z_split.indicesLow.length + z_split.indicesHigh.length];
         for (int i = 0; i < z_split.indicesLow.length; i++) {
@@ -1012,8 +657,6 @@ public class CalcIDark {
         for (int i = 0; i < z_split.indicesHigh.length; i++) {
             gesamtKonz[z_split.indicesHigh[i]] = konz_high[i];
         }
-
-
 
         // 3. Mittlere Ordnungszahl berechnen
         double ordnungszahl_summe = 0.0;
@@ -1034,27 +677,7 @@ public class CalcIDark {
 
         double geo = geoIbIg(IbHigh);
         double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz,geo);
-        //double[] arr = {29.6599, 34.3829, 35.9572};
-        //double[] berechneteIntensitaet1 = calcDark.berechneSummenintensitaetMitKonz(arr,3.56e-09);
 
-
-        /*
-
-        String out = Arrays.stream(gesamtKonz)
-                .map(v -> v * 100.0)
-                .mapToObj(v -> String.format(Locale.GERMANY, "%.4f", v)) // GERMANY = Komma
-                .collect(Collectors.joining(", ", "[", "]"));
-
-
-
-        // 5. Ausgabe
-        System.out.println("===== Ergebnis-Report =====");
-        System.out.println("konz_summe"+konz_summe);
-        System.out.println("Optimierte Konzentrationen: " + out + " %");
-        System.out.printf("Optimierte mittlere Ordnungszahl, wird hier zwangsweise immer erreicht: %.4f%n", z_mittel_opt);
-        System.out.println("Berechnete Intensitäten: " + Arrays.toString(berechneteIntensitaet1));
-        System.out.println("==================================");
-*/
 
         int n = gesamtKonz.length;
         Integer[] order = new Integer[n];
@@ -1082,22 +705,7 @@ public class CalcIDark {
                 z_mittel_opt);
         System.out.println("Berechnete Intensitäten: " + java.util.Arrays.toString(berechneteIntensitaet1));
         System.out.println("==================================");
-
-
-
     }
-
-
-
-
-
-
-
-
-
-
-
-
 
     public double[] applyZAnpassen(double[] optimaleKonz, double[] lowVerteilung, double zMittelwert) {
         // Ordnungszahlen holen & splitten
@@ -1136,24 +744,10 @@ public class CalcIDark {
         return adjusted;
     }
 
-
-
-
-
-
-
-
-
-
-
-    // Hipparchus NLLS (Levenberg–Marquardt) – "Einfach"-Parametrisierung
-    public double[] optimizeWithHIPPARCHUS_MINLM_Einfach(double zMittelwert, double[] lowVerteilung) {
+    public double[] optimizeHIPPARCHUS(double zMittelwert, double[] lowVerteilung) {
         // Startvektor auf "Einfach" reduzieren
         //System.out.println("DAK"+addedDark);
         double[] lowVerteilungNeu = appendZeros(lowVerteilung, addedDark);
-
-
-
 
         double[] start1 = startwerte(zMittelwert, lowVerteilungNeu);
         double[] start  = new double[start1.length - 1];
@@ -1177,44 +771,15 @@ public class CalcIDark {
             // Optional: leicht clampen, um NaN/Inf zu vermeiden (Hipparchus-LM hat keine Bounds)
             for (int j = 0; j < p.length; j++) {
                 if (!Double.isFinite(p[j])) p[j] = 1.0;
-                // weicher Korridor wie in DF/BC/bleic
                 if (p[j] < 1e-12) p[j] = 1e-12;
                 if (p[j] > 2.0)   p[j] = 2.0;
             }
 
-            double[] resid = this.berechnenResiduumEinfach(p, lowVerteilungNeu, zMittelwert);
+            double[] resid = this.residuum(p, lowVerteilungNeu, zMittelwert);
             // Safety: keine NaNs/Inf an den Optimierer liefern
             for (int i = 0; i < resid.length; i++) {
                 if (!Double.isFinite(resid[i])) resid[i] = 1e150;
             }
-
-
-            /*
-
-            final double h = 1e-6; // Schrittweite für Zentraldifferenzen
-            // Numerischer Jacobi (Zentraldifferenzen)
-            double[][] J = new double[m][n];
-            for (int j = 0; j < n; j++) {
-                double orig = p[j];
-
-                p[j] = orig + h;
-                double[] rp = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
-
-                p[j] = orig - h;
-                double[] rm = this.berechnenResiduumEinfach(p, lowVerteilung, zMittelwert);
-
-                p[j] = orig;
-
-                for (int i = 0; i < m; i++) {
-                    double d = (rp[i] - rm[i]) / (2 * h);
-                    if (!Double.isFinite(d)) d = 0.0;
-                    J[i][j] = d;
-                }
-            }
-
-
-             */
-
 
             final double [] h = computeAbsoluteStep2Point(p); // Schrittweite für Zentraldifferenzen
             double[][] J = new double[m][n];
@@ -1222,10 +787,10 @@ public class CalcIDark {
                 double orig = p[j];
 
                 p[j] = orig + h[j];
-                double[] rp = this.berechnenResiduumEinfach(p, lowVerteilungNeu, zMittelwert);
+                double[] rp = this.residuum(p, lowVerteilungNeu, zMittelwert);
 
                 p[j] = orig;
-                double[] rm = this.berechnenResiduumEinfach(p, lowVerteilungNeu, zMittelwert);
+                double[] rm = this.residuum(p, lowVerteilungNeu, zMittelwert);
 
                 //p[j] = orig;
 
@@ -1235,13 +800,6 @@ public class CalcIDark {
                     J[i][j] = d;
                 }
             }
-
-
-
-
-
-
-
 
             RealVector value    = new ArrayRealVector(resid, false);
             RealMatrix jacobian = new Array2DRowRealMatrix(J, false);
@@ -1265,7 +823,7 @@ public class CalcIDark {
         LeastSquaresOptimizer.Optimum opt = optimizer.optimize(problem);
 
         // Logging (optional)
-        double[] residFinal = this.berechnenResiduumEinfach(opt.getPoint().toArray(), lowVerteilungNeu, zMittelwert);
+        double[] residFinal = this.residuum(opt.getPoint().toArray(), lowVerteilungNeu, zMittelwert);
         double f = 0.0; for (double r : residFinal) f += r * r;
         System.out.printf("[Hipparchus minlm] eval=%d it=%d, f=%.6e%n",
                 opt.getEvaluations(), opt.getIterations(), f);
@@ -1311,16 +869,6 @@ public class CalcIDark {
         if (nZeros <= 0) return a;              // nichts zu tun
         return Arrays.copyOf(a, a.length + nZeros);
     }
-
-
-
-
-
-
-
-
-
-
 
 
 }

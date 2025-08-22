@@ -56,6 +56,7 @@ public class Detektor {
         this.Emin = (Emin != 0) ? Emin : step;
         this.Emax = Emax;
         this.step = step;
+        this.Filter = Filter;
 
         Funktionen f = new FunktionenImpl();
 

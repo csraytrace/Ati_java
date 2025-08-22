@@ -1,19 +1,19 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.example</groupId>
   <artifactId>Atiquant</artifactId>
   <version>1.0-SNAPSHOT</version>
-  <packaging>jar</packaging>
-
   <name>Atiquant</name>
-  <url>http://maven.apache.org</url>
+  <packaging>jar</packaging>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>17</maven.compiler.source>
     <maven.compiler.target>17</maven.compiler.target>
+    <javafx.version>21.0.2</javafx.version>
   </properties>
 
   <dependencies>
@@ -23,11 +23,47 @@
       <version>3.6.1</version>
     </dependency>
 
+    <!-- JavaFX für Windows -->
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-controls</artifactId>
+      <version>${javafx.version}</version>
+      <classifier>win</classifier>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-fxml</artifactId>
+      <version>${javafx.version}</version>
+      <classifier>win</classifier>
+    </dependency>
+
     <dependency>
       <groupId>org.hipparchus</groupId>
       <artifactId>hipparchus-optim</artifactId>
       <version>RELEASE</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.mariuszgromada.math</groupId>
+      <artifactId>MathParser.org-mXparser</artifactId>
+      <version>6.1.0</version>
+    </dependency>
+
+
+
+
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.openjfx</groupId>
+        <artifactId>javafx-maven-plugin</artifactId>
+        <version>0.0.8</version>
+        <configuration>
+          <mainClass>org.example.JavaFx</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

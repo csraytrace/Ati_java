@@ -3,6 +3,7 @@ package org.example;
 import java.util.List;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Locale;
 
 import org.hipparchus.linear.Array2DRowRealMatrix;
 import org.hipparchus.linear.ArrayRealVector;
@@ -704,6 +705,7 @@ public class CalcIDark {
                 "Optimierte mittlere Ordnungszahl, wird hier zwangsweise immer erreicht: %.4f%n",
                 z_mittel_opt);
         System.out.println("Berechnete Intensitäten: " + java.util.Arrays.toString(berechneteIntensitaet1));
+        System.out.printf(java.util.Locale.US, "Geometriefaktor: %.4e%n", geo);
         System.out.println("==================================");
     }
 

@@ -1,14 +1,47 @@
 package org.example;
 
+import org.mariuszgromada.math.mxparser.License;
+import org.mariuszgromada.math.mxparser.Function;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class KlaudProbe {
-
+public class parsertest {
 
 
     public static void main(String[] args) {
+        // Beispiel 1
+        MathParser h = MathParser.withDefault(0.0)
+                .addExprSegment("3*x^3 + ln(x)/sin(x)", 3.0, true, 3.04, false)  // [3, 3.04)
+                .addExprSegment("sqrt(x) * exp(0.2*x)", 3.04, true, 6.0,  true); // [3.04, 6]
+
+        System.out.println(h.evaluate(2.9));   // 0.0
+        System.out.println(h.evaluate(3.04));  // Wert aus erstem Segment
+        System.out.println(h.evaluate(5.0));   // Wert aus zweitem Segment
+        System.out.println(h.evaluate(7.0));   // 0.0
+        System.out.println("\n");   // 0.0
+
+        // Beispiel 2
+        MathParser energie = new MathParser(1.0, 1e-12)
+                .addExprSegment("1 / (1 + 2)", 1.0, true, 40.0, true);
+
+        System.out.println(energie.evaluate(0.5));  // 1.0 (außerhalb)
+        System.out.println(energie.evaluate(20));   // ~0.5
+        System.out.println(energie.evaluate(50));
+        System.out.println("\n");   // 0.0// 1.0 (außerhalb)
+
+        // Beispiel 3
+        Function fx = new Function("f(x) = x^2 + 2*x + 1");
+        Function g = new Function("g(x) = ln(x) / (1 + x)");
+        MathParser pw = MathParser.withDefault(0.0)
+                .addFunctionSegment(fx,  0.0, true, 2.0,  false)  // [0,2)
+                .addFunctionSegment(g,  2.0, true, 10.0, true);  // [2,10]
+
+        System.out.println(pw.evaluate(1.5));  // f(1.5)
+        System.out.println(pw.evaluate(3.0));  // g(3.0)
+        System.out.println(pw.evaluate(12));   // 0.0 (außerhalb)
+
 
 
         List<String> elementSymboleDark = Arrays.asList( "C", "N", "O", "Si", "Ti");
@@ -112,4 +145,7 @@ public class KlaudProbe {
 
 
     }
-}
+
+
+    }
+

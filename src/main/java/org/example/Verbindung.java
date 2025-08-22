@@ -14,6 +14,7 @@ public class Verbindung {
     private double dichte;
     private final List<Element> Elementliste;
     private double fensterDickeCm;
+    private MathParser modulation;
 
     public Verbindung(String[] symbole, double[] konzentrationen,  double Emin, double Emax, double step, String dateipfad, double dichte) {
         this.symbole = symbole;
@@ -259,13 +260,33 @@ public class Verbindung {
     }
 
 
+    /** Setzt die Modulation auf “immer 1” (keine Änderung). */
+    public void setModulationIdentitaet() {
+        this.modulation = MathParser.withDefault(1.0); // ohne Segmente -> evaluate(x) = 1
+    }
+
+    /** Leert/initialisiert die Modulation mit Default-Wert außerhalb aller Intervalle. */
+    public void clearModulation(double defaultValue) {
+        this.modulation = MathParser.withDefault(defaultValue);
+    }
+
+    /** Fügt ein stückweises Segment hinzu: Ausdruck gilt im Intervall [a,b] (inkl/exkl). */
+    public void addModulationSegment(String expr, double a, boolean inklA, double b, boolean inklB) {
+        if (this.modulation == null) {
+            this.modulation = MathParser.withDefault(1.0);
+        }
+        this.modulation = this.modulation.addExprSegment(expr, a, inklA, b, inklB);
+    }
+
+
+
     public double erzeuge_Filter(double energie, double Fensterwinkel){
         double fensterMue = massenschwächungskoeffizientEnergie(energie);
         double fensterEinfallCos = Math.cos(Math.toRadians(Fensterwinkel));
 
         double transF = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
-
-        return transF;}
+        double faktor = (modulation != null) ? modulation.evaluate(energie) : 1.0;
+        return transF * faktor;}
 
     public double erzeuge_Filter(double energie) {
         return erzeuge_Filter(energie, 0.0);
@@ -279,7 +300,10 @@ public class Verbindung {
             double energie = energien[i];
             double fensterMue = massenschwächungskoeffizientEnergie(energie);
 
-            result[i] = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
+            //result[i] = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
+            double transF = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
+            double faktor = (modulation != null) ? modulation.evaluate(energie) : 1.0;
+            result[i] = transF * faktor;
         }
         return result;
     }

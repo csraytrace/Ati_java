@@ -1,5 +1,6 @@
 package org.example;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -39,9 +40,10 @@ public class KlaudProb2 {
         v1.multipliziereKonzentrationen(1.04 / 5.52);
 
 
-//sigma=8.30349567e-01
-        //binder=[[4.67,1],["1C38H76N2O2"]]
-//8.30349567e-01
+
+
+
+
         CalcIDark calcDark = new CalcIDark(
                 "MCMASTER.TXT",  // dateipfad
                 probeDark,

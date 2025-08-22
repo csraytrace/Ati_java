@@ -75,6 +75,7 @@ public class TestBobyqa {
 
 
         double[] startwerte = {15, 3, 0, 1.2, 0.95, 45, 10};
+        /*
 
         // NLLS-Aufruf mit BOBYQA:
         double[] optimierteParameter = Kalibrierung.kalibrierungNLLS_bobyqa(
@@ -91,6 +92,6 @@ public class TestBobyqa {
         System.out.println("Optimierte Parameter (BOBYQA):");
         for (int i = 0; i < optimierteParameter.length; i++) {
             System.out.println(paraVar.get(i)[0] + " = " + optimierteParameter[i]);
-        }
+        }*/
     }
 }

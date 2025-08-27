@@ -376,6 +376,39 @@ public class Verbindung {
     }
 
 
+    // --- Copy-Konstruktor ---
+    public Verbindung(Verbindung other) {
+        // Arrays tief kopieren
+        this.symbole = other.symbole.clone();
+        this.konzentrationen = other.konzentrationen.clone();
+
+        // skalare/finale Felder übernehmen
+        this.Emin = other.Emin;
+        this.Emax = other.Emax;
+        this.step = other.step;
+        this.dateipfad = other.dateipfad;
+        this.dichte = other.dichte;
+        this.fensterDickeCm = other.fensterDickeCm;
+
+        // Elementliste neu aufbauen (tiefe Kopie)
+        this.Elementliste = new ArrayList<>(other.Elementliste.size());
+        for (Element e : other.Elementliste) {
+            // falls Element einen Copy-Ctor hat, könntest du auch: new Element(e)
+            this.Elementliste.add(new Element(this.dateipfad, e.getSymbol(), this.Emin, this.Emax, this.step));
+        }
+
+        // Modulation NICHT teilen: Kopie startet als Identität (Faktor 1)
+        this.modulation = MathParser.withDefault(1.0);
+    }
+
+    // Bequemer Wrapper
+    public Verbindung copy() {
+        return new Verbindung(this);
+    }
+
+
+
+
 
 
 }

@@ -7,14 +7,7 @@ import java.util.*;
 import java.util.stream.*;
 
 
-/*
-import org.apache.commons.math3.analysis.MultivariateVectorFunction;
-import org.apache.commons.math3.fitting.leastsquares.LeastSquaresBuilder;
-import org.apache.commons.math3.fitting.leastsquares.LeastSquaresOptimizer;
-import org.apache.commons.math3.fitting.leastsquares.LeastSquaresProblem;
-import org.apache.commons.math3.fitting.leastsquares.LevenbergMarquardtOptimizer;
-import org.apache.commons.math3.linear.Array2DRowRealMatrix;
-import org.apache.commons.math3.linear.ArrayRealVector;
+
 import org.apache.commons.math3.optim.nonlinear.scalar.noderiv.BOBYQAOptimizer;
 import org.apache.commons.math3.optim.nonlinear.scalar.ObjectiveFunction;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -22,37 +15,39 @@ import org.apache.commons.math3.optim.InitialGuess;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.PointValuePair;
 import org.apache.commons.math3.optim.SimpleBounds;
-*/
-
-
-import org.hipparchus.linear.Array2DRowRealMatrix;
-import org.hipparchus.linear.ArrayRealVector;
-import org.hipparchus.linear.RealMatrix;
-import org.hipparchus.linear.RealVector;
-import org.hipparchus.optim.SimpleVectorValueChecker;
-import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresBuilder;
-import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresOptimizer;
-import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOptimizer;
-import org.hipparchus.util.Pair;
-import org.hipparchus.optim.nonlinear.vector.leastsquares.*;
-import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
 
 
 
-public class Kalibrierung {
+//EMAX darf nicht mit einem Filter variiert werden
+
+public class Kali1 {
+
+    private List<Verbindung> filterRöhre;
+    private List<Verbindung> filterDet;
+
+    // 1) Default: leere Filter
+    public Kali1() {
+        this.filterRöhre = new ArrayList<>();
+        this.filterDet   = new ArrayList<>();
+    }
+
+    // 2) Mit zwei Listen initialisieren
+    public Kali1(List<Verbindung> filterRoehre, List<Verbindung> filterDet) {
+        // defensiv kopieren + null-sicher
+        this.filterRöhre = (filterRoehre == null) ? new ArrayList<>() : new ArrayList<>(filterRoehre);
+        this.filterDet   = (filterDet   == null) ? new ArrayList<>() : new ArrayList<>(filterDet);
+    }
 
     static DecimalFormat sciFormat = new DecimalFormat("0.0000E00");
 
-    public static void kalibrierung(
+    public void kalibrierung(
             List<String[]> para_var,    //String [] hätte gereicht
             List<double[]> grenzen,
             Object stepanzahl,
             List<Probe> proben,
             boolean bedingung,
             String speicherort,
-            String para     //para zu einem String [] machen, damit nicht alle Messungen bei denselben Bedingungen stattfinden müssen ToDO
-            //macht aber wahrscheinlich keinen Sinn, weil man für jede Parametereinstellung eigentlich eine Kalibrierung möchte
-            //daher sollten alle Proben unter derselben Bedingung gemessen werden
+            String para     //para zu einem String [] machen, damit nicht alle Messungen bei denselben Bedingungen stattfinden müssen, sollte eigentlich ein react sein
     ) throws IOException {
 
         List<List<Double>> grenzenNeu = new ArrayList<>();
@@ -118,9 +113,11 @@ public class Kalibrierung {
                 for (Probe probe : proben) {
 
 
-                    CalcIBuilder builder = new CalcIBuilder()
+                    CalcIBuilder builder = new CalcIBuilder()   //könnte auf CalcIDark erweitert werden
                             .setProbe(probe);
                     applySettingsToBuilder(builder, einstellung);
+                    builder.setFilterRöhre(filterRöhre);
+                    builder.setFilterDet(filterDet);
                     CalcI calc = builder.build();
 
                     PreparedValues pv = calc.werteVorbereitenAlle();
@@ -159,134 +156,7 @@ public class Kalibrierung {
     }
 
 
-
-
-    public static double[] kalibrierungNLLSHipparchus(
-            List<String[]> para_var,
-            List<double[]> grenzen,
-            double[] gemesseneIntensitaet,   // nur für Ziel-Länge; Ziel ist 0-VEktor
-            List<Probe> proben,
-            boolean bedingung,
-            String para,
-            double[] startwerte
-    ) {
-        final int n = para_var.size();
-
-        // Startwerte
-        double[] start = (startwerte != null && startwerte.length == n)
-                ? startwerte.clone()
-                : new double[n];
-        if (startwerte == null) {
-            for (int i = 0; i < n; i++) {
-                start[i] = (grenzen.get(i)[0] + grenzen.get(i)[1]) / 2.0;
-            }
-        }
-
-        // Bounds
-        double[] lower = new double[n], upper = new double[n];
-        for (int i = 0; i < n; i++) {
-            lower[i] = grenzen.get(i)[0];
-            upper[i] = grenzen.get(i)[1];
-        }
-
-        // Ziel-Länge (Residuenlänge) anhand Startpunkt bestimmen
-        double[] rStart = berechneResiduen(start, para_var, proben, bedingung, para);
-        final int m = rStart.length;
-
-        // Modell: gibt Residuen UND Jacobi zurück (Vorwärtsdifferenzen)
-        MultivariateJacobianFunction model = (RealVector point) -> {
-            double[] p = point.toArray();
-            double[] r0 = berechneResiduen(p, para_var, proben, bedingung, para);
-
-            int rows = r0.length;
-            int cols = p.length;
-            double[][] J = new double[rows][cols];
-
-            double[] h = computeAbsoluteStep2Point(p, null); // dein Step
-
-            for (int j = 0; j < cols; j++) {
-                double orig = p[j];
-                double step = h[j];
-                if (!Double.isFinite(step) || step == 0.0) {
-                    step = Math.sqrt(Math.ulp(1.0)) * (orig >= 0.0 ? 1.0 : -1.0) * Math.max(1.0, Math.abs(orig));
-                }
-
-                p[j] = orig + step;
-                double[] rp = berechneResiduen(p, para_var, proben, bedingung, para);
-                p[j] = orig;
-                double[] rm = berechneResiduen(p, para_var, proben, bedingung, para);
-
-                for (int i = 0; i < rows; i++) {
-                    double d = (rp[i] - rm[i]) / step;   // F(x+h)-F(x) / h
-                    if (!Double.isFinite(d)) d = 0.0;
-                    J[i][j] = d;
-                }
-            }
-
-            RealVector value = new ArrayRealVector(r0, false);
-            RealMatrix jac   = new Array2DRowRealMatrix(J, false);
-            return new Pair<>(value, jac);
-        };
-
-        LeastSquaresBuilder b = new LeastSquaresBuilder()
-                .start(new ArrayRealVector(start, false))
-                .target(new double[m]) // Ziel = Nullvektor
-                .model(model)
-                .maxEvaluations(2000)
-                .maxIterations(2000)
-                .checkerPair(new SimpleVectorValueChecker(1e-10, 1e-10))
-                .parameterValidator(vec -> {
-                    double[] p = vec.toArray();
-                    for (int i = 0; i < p.length; i++) {
-                        p[i] = Math.max(lower[i], Math.min(upper[i], p[i]));
-                    }
-                    return new ArrayRealVector(p, false);
-                });
-
-        LeastSquaresOptimizer optimizer = new LevenbergMarquardtOptimizer();
-        LeastSquaresOptimizer.Optimum opt = optimizer.optimize(b.build());
-        return opt.getPoint().toArray();
-    }
-
-
-
-
-    public static double[] computeAbsoluteStep2Point(double[] x0, double[] relStep) {
-        final double rstep = Math.sqrt(Math.ulp(1.0)); // ≈ 1.49e-8
-        final int n = x0.length;
-
-        double[] sign = new double[n];
-        for (int i = 0; i < n; i++) sign[i] = (x0[i] >= 0.0) ? 1.0 : -1.0; // 1 bei x0==0
-
-        double[] absStep = new double[n];
-
-        if (relStep == null) {
-            for (int i = 0; i < n; i++) {
-                absStep[i] = rstep * sign[i] * Math.max(1.0, Math.abs(x0[i]));
-            }
-        } else {
-            if (relStep.length != n)
-                throw new IllegalArgumentException("relStep und x0 müssen gleich lang sein.");
-            for (int i = 0; i < n; i++) {
-                double a  = relStep[i] * sign[i] * Math.abs(x0[i]);
-                double dx = (x0[i] + a) - x0[i]; // vermeidet Cancellation
-                absStep[i] = (dx == 0.0)
-                        ? rstep * sign[i] * Math.max(1.0, Math.abs(x0[i]))
-                        : a;
-            }
-        }
-        return absStep;
-    }
-
-
-
-
-
-
-
-/*
-
-    public static double[] kalibrierungNLLS_bobyqa(
+    public double[] kalibrierungNLLS_bobyqa(
             List<String[]> para_var,
             List<double[]> grenzen,
             double[] gemesseneIntensitaet,
@@ -338,14 +208,18 @@ public class Kalibrierung {
         return optimum.getPoint();
     }
 
-*/
 
     // Hilfsmethode für Residuen
-    private static double[] berechneResiduen(
+    private double[] berechneResiduen(
             double[] params, List<String[]> para_var, List<Probe> proben,
             boolean bedingung, String para
     ) {
         double[] geo_ele = new double[proben.size()];
+
+
+        String paraClean = filterPara(para, para_var, bedingung);
+
+
 
         for (int j = 0; j < proben.size(); j++) {
             Probe probe = proben.get(j);
@@ -364,10 +238,12 @@ public class Kalibrierung {
             String einstellung = parts.stream()
                     .map(s -> s.replace(",", "."))
                     .collect(Collectors.joining(", "));
-            if (!para.isBlank()) einstellung += ", " + para;
+            if (!paraClean.isBlank()) einstellung += ", " + paraClean;
 
             CalcIBuilder builder = new CalcIBuilder().setProbe(probe);
             applySettingsToBuilder(builder, einstellung);
+            builder.setFilterRöhre(filterRöhre);
+            builder.setFilterDet(filterDet);
             CalcI calc = builder.build();
             PreparedValues pv = calc.werteVorbereitenAlle();
 
@@ -383,13 +259,130 @@ public class Kalibrierung {
         double geo_mittel = Arrays.stream(geo_ele).average().orElse(Double.NaN);
         double[] residuen = new double[geo_ele.length];
         for (int k = 0; k < residuen.length; k++) {
-            residuen[k] = (geo_ele[k] - geo_mittel) / geo_mittel;
-            //residuen[k] = (geo_ele[k] - geo_mittel) ;// absolut
+            //residuen[k] = (geo_ele[k] - geo_mittel) / geo_mittel;
+            residuen[k] = (geo_ele[k] - geo_mittel) ;// absolut
         }
 
 
         return residuen;
     }
+
+
+    private static String normalizeKey(String key) {
+        if (key == null) return "";
+        String k = key.trim().toLowerCase(Locale.ROOT);
+        k = k.replace("_", ""); // "charzucont_l" == "charzucontl"
+        // Aliase vereinheitlichen
+        if (k.equals("charzucontl")) k = "charzucontl";
+        return k;
+    }
+
+    private static String filterPara(String para, List<String[]> para_var, boolean bedingung) {
+        if (para == null || para.isBlank()) return para;
+
+        // Alle Optimierungs-Keys sammeln (normalisiert)
+        Set<String> optKeys = new HashSet<>();
+        for (String[] p : para_var) {
+            if (p != null && p.length > 0) optKeys.add(normalizeKey(p[0]));
+        }
+        boolean hasAlpha = optKeys.contains("einfallswinkelalpha");
+        boolean hasBeta  = optKeys.contains("einfallswinkelbeta");
+
+        String[] tokens = para.split(",");
+        List<String> kept = new ArrayList<>(tokens.length);
+
+        for (String token : tokens) {
+            String t = token.trim();
+            if (t.isEmpty()) continue;
+            String[] kv = t.split("=", 2);
+            if (kv.length != 2) continue;
+
+            String rawKey = kv[0].trim();
+            String key    = normalizeKey(rawKey);
+
+            // 1) Alles entfernen, was in para_var optimiert wird
+            if (optKeys.contains(key)) continue;
+
+            // 2) Bei Bedingung: Gegenwinkel aus para entfernen
+            if (bedingung) {
+                if (hasAlpha && key.equals("einfallswinkelbeta")) continue;
+                if (hasBeta  && key.equals("einfallswinkelalpha")) continue;
+            }
+
+            // sonst behalten (Original-Schreibweise bewahren)
+            kept.add(rawKey + "=" + kv[1].trim());
+        }
+
+        return String.join(", ", kept);
+    }
+
+
+
+
+
+
+
+    public static double[] berechneGeo(
+            double[] params, List<String[]> para_var, List<Probe> proben,
+            boolean bedingung, String para
+    ) {
+        double[] geo_ele = new double[proben.size()];
+
+
+        String paraClean = filterPara(para, para_var, bedingung);
+        System.out.println(para);
+        System.out.println(paraClean);
+
+        for (int j = 0; j < proben.size(); j++) {
+            Probe probe = proben.get(j);
+            List<String> parts = new ArrayList<>();
+            for (int i = 0; i < params.length; i++)
+                parts.add(para_var.get(i)[0] + "=" + sciFormat.format(params[i]));
+
+            if (bedingung) {
+                for (int i = 0; i < params.length; i++) {
+                    if (para_var.get(i)[0].equals("Einfallswinkelalpha"))
+                        parts.add("Einfallswinkelbeta=" + sciFormat.format(90 - params[i]));
+                    else if (para_var.get(i)[0].equals("Einfallswinkelbeta"))
+                        parts.add("Einfallswinkelalpha=" + sciFormat.format(90 - params[i]));
+                }
+            }
+            String einstellung = parts.stream()
+                    .map(s -> s.replace(",", "."))
+                    .collect(Collectors.joining(", "));
+            if (!paraClean.isBlank()) einstellung += ", " + paraClean;
+
+            CalcIBuilder builder = new CalcIBuilder().setProbe(probe);
+            applySettingsToBuilder(builder, einstellung);
+            CalcI calc = builder.build();
+            PreparedValues pv = calc.werteVorbereitenAlle();
+
+            double[] konz = probe.getElemente().size() == 1 ? new double[]{1.0}
+                    : calc.berechneRelKonzentrationen(calc, pv, 100);
+            double[] intensitaeten = calc.berechneSummenintensitaetMitKonz(konz);
+            //double[] geo = calc.geometriefaktor(konz, intensitaeten);
+            double[] geo = calc.geometriefaktor(probe.getIntensitäten(), intensitaeten);
+
+            geo_ele[j] = Arrays.stream(geo).average().orElse(Double.NaN);
+        }
+
+        return geo_ele;
+    }
+
+    public static double mittelGeo(double [] geo)
+    {return Arrays.stream(geo).average().orElse(Double.NaN);}
+
+    public static double mittlereAbweichung(double[] geo) {
+        // Nur endliche Werte berücksichtigen
+        double[] vals = Arrays.stream(geo).filter(Double::isFinite).toArray();
+        if (vals.length == 0) return Double.NaN;
+
+        double mean = Arrays.stream(vals).average().orElse(Double.NaN);
+        double sumAbs = 0.0;
+        for (double v : vals) sumAbs += Math.abs(v - mean);
+        return sumAbs / vals.length / mittelGeo(geo);
+    }
+
 
 
 

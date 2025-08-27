@@ -4,12 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class TestBobyqa {
+public class TestHippKali {
     public static void main(String[] args) {
-
-        double Emin=0.05;
-        double Emax=45;
-        double step=0.05;
         List<String[]> paraVar = Arrays.asList(
                 //new String[]{"sigma"},
                 new String[]{"Einfallswinkelalpha"},
@@ -17,6 +13,7 @@ public class TestBobyqa {
                 new String[]{"Totschicht"},
                 new String[]{"charzucontL"},
                 new String[]{"charzucont"},
+                new String[]{"Emax"},
                 new String[]{"Kontaktmaterialdicke"}
 
         );
@@ -27,6 +24,7 @@ public class TestBobyqa {
                 new double[]{0.0, 0.2},
                 new double[]{0.1, 1.2},
                 new double[]{0.8, 1.1},
+                new double[]{35, 45},
                 new double[]{10, 40}
         );
 
@@ -62,7 +60,7 @@ public class TestBobyqa {
             List<String> elementSymbole = Arrays.asList(symbol);
             List<Integer> elementInt = Arrays.asList(intensity);
 
-            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", Emin, Emax, step, elementInt);
+            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", 0, 35, 0.05, elementInt);
             gemesseneIntensitaet[index]=intensity;
 
             // Übergang aktivieren:
@@ -76,35 +74,17 @@ public class TestBobyqa {
         }
 
 
-        double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
-        String para="Emin=0.05, Emax=45,step=0.05";
-        //"sigma=0.8, raumwinkel=0.9, Einfallswinkelalpha=8, Einfallswinkelbeta=70"
-
-
-        List<Verbindung> filter = new ArrayList<>();
-        // Beispiel: Verbindung mit Dichte 0.1 und Symbol "Be"
-        Verbindung beFilter = new Verbindung(
-                new String[]{"Be"},
-                new double[]{1.0},
-                Emin, Emax, step,    // Emin, Emax, step
-                "MCMASTER.TXT",
-                0.1             // Dichte
-        );
-        beFilter.setFensterDickeCm(0.2);
-        filter.add(beFilter);
-
-
-        Kali1 kali = new Kali1(null,null);
+        double[] startwerte = {15, 3, 0, 1.2, 0.95, 45, 10};
 
 
         // NLLS-Aufruf mit BOBYQA:
-        double[] optimierteParameter = kali.kalibrierungNLLS_bobyqa(
+        double[] optimierteParameter = Kalibrierung.kalibrierungNLLSHipparchus(
                 paraVar,
                 grenzen,
                 gemesseneIntensitaet,
                 probeliste,
-                true,
-                para,
+                false,
+                "",
                 startwerte // Startwerte
         );
 
@@ -113,24 +93,5 @@ public class TestBobyqa {
         for (int i = 0; i < optimierteParameter.length; i++) {
             System.out.println(paraVar.get(i)[0] + " = " + optimierteParameter[i]);
         }
-
-
-
-        double[] geo = Kali1.berechneGeo(
-                optimierteParameter,       // params
-                paraVar,                   // para_var (List<String[]>)
-                probeliste,                // proben (List<Probe>)
-                true,                      // bedingung
-                para // para
-        );
-
-        System.out.println("Optimierte Parameter (Geo):");
-        for (int i = 0; i < geo.length; i++) {
-            System.out.println(geo[i]);
-        }
-        System.out.println(Kali1.mittlereAbweichung(geo));
-
-
-
     }
 }

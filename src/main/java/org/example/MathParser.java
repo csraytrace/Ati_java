@@ -108,7 +108,7 @@ public final class MathParser {
             if (s.inside(x, eps)) {
                 double y = s.f.calculate(x);
                 if (Double.isNaN(y) || Double.isInfinite(y)) return defaultValue;
-                return y;
+                return Math.abs(y); //statt return y, damit immer positv
             }
         }
         return defaultValue;

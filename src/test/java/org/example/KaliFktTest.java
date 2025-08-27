@@ -1,10 +1,12 @@
 package org.example;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
-public class TestBobyqa {
+public class KaliFktTest {
+
+
+
     public static void main(String[] args) {
 
         double Emin=0.05;
@@ -76,8 +78,7 @@ public class TestBobyqa {
         }
 
 
-        double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
-        String para="Emin=0.05, Emax=45,step=0.05";
+
         //"sigma=0.8, raumwinkel=0.9, Einfallswinkelalpha=8, Einfallswinkelbeta=70"
 
 
@@ -90,45 +91,84 @@ public class TestBobyqa {
                 "MCMASTER.TXT",
                 0.1             // Dichte
         );
-        beFilter.setFensterDickeCm(0.2);
+        beFilter.setFensterDickeCm(0);
         filter.add(beFilter);
 
 
-        Kali1 kali = new Kali1(null,null);
+        KalibrierungFunktion kal = new KalibrierungFunktion(filter,null,3.8537950863499206E-5);
 
+        //double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
+        double[] startwerte = {18.267463928051775, 2.8623463615208564, 0, 0.1, 1.0770533966938147, 10.035482713128378};
+        String para="Emin=0.05, Emax=45,step=0.05";
 
-        // NLLS-Aufruf mit BOBYQA:
-        double[] optimierteParameter = kali.kalibrierungNLLS_bobyqa(
-                paraVar,
-                grenzen,
-                gemesseneIntensitaet,
-                probeliste,
-                true,
-                para,
-                startwerte // Startwerte
+        boolean bedingung = true;// beliebig
+        String funktion = "a*x^2 + b*x + c + d * exp(x*e)";                // Modulationsfunktion über Energie x
+        Map<String, Double> funktionsParameter = Map.of(
+                "a", 0.0,    // 0 ⇒ nur Offset b
+                "b", 0.0,
+                "c",1.,
+                "d",0.,
+                "e",0.
+                //"a", -0.0036822973031124333,    // 0 ⇒ nur Offset b
+               // "b", 0.13329511108092246,
+               // "c",0.33629628051289584
         );
+        double x1 = 0.0;    // Modulationsfenster (Schranken)
+        double x2 = Emax;
 
-        // Ausgabe
-        System.out.println("Optimierte Parameter (BOBYQA):");
-        for (int i = 0; i < optimierteParameter.length; i++) {
-            System.out.println(paraVar.get(i)[0] + " = " + optimierteParameter[i]);
-        }
+        double[] residuen = kal.berechneResiduen(
+                startwerte, paraVar, probeliste,
+                bedingung, para,
+                funktion, funktionsParameter,
+                x1, x2);
 
 
 
-        double[] geo = Kali1.berechneGeo(
-                optimierteParameter,       // params
-                paraVar,                   // para_var (List<String[]>)
-                probeliste,                // proben (List<Probe>)
+        System.out.println("Residuen: " + Arrays.stream(residuen)
+                .mapToObj(v -> String.format(Locale.US, "%.6g", v))
+                .collect(Collectors.joining(", ")));
+
+
+
+        double[] geo = kal.berechneGeo(
+                startwerte, paraVar, probeliste,
+                bedingung, para,
+                funktion, funktionsParameter,
+                x1, x2);
+        System.out.println("Geo: " + Arrays.stream(geo)
+                .mapToObj(v -> String.format(Locale.US, "%.6g", v))
+                .collect(Collectors.joining(", ")));
+
+
+        System.out.println(kal.mittlereAbweichung(geo));
+        System.out.println(kal.mittelGeo(geo));
+
+
+
+        // fixe "params" (die NICHT optimiert werden)
+        double[] fixedParams = startwerte; // oder was du willst
+
+// Startwerte für die Funktions-Parameter in stabiler Reihenfolge:
+        LinkedHashMap<String,Double> startMap = new LinkedHashMap<>();
+        startMap.put("a", 0.0);
+        startMap.put("b", 0.0);
+        startMap.put("c", 1.0);
+        startMap.put("d", 0.0);
+        startMap.put("e", 0.0);
+
+        Map<String,Double> best = kal.fitFunktionsParameterLM(
+                fixedParams, paraVar, probeliste,
                 true,                      // bedingung
-                para // para
+                para,               // para
+                funktion,         // funktion
+                startMap,
+                0.0, Emax                 // x1, x2 Fenster
         );
 
-        System.out.println("Optimierte Parameter (Geo):");
-        for (int i = 0; i < geo.length; i++) {
-            System.out.println(geo[i]);
-        }
-        System.out.println(Kali1.mittlereAbweichung(geo));
+        System.out.println("Optimierte Funktions-Parameter: " + best);
+
+
+
 
 
 

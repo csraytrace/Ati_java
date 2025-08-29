@@ -57,6 +57,8 @@ public class Detektor {
         this.Emax = Emax;
         this.step = step;
         this.Filter = Filter;
+        //System.out.println(kontaktmaterialdicke);
+        //System.out.println(activeLayer);
 
         Funktionen f = new FunktionenImpl();
 

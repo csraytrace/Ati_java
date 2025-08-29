@@ -5,6 +5,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+
 import org.mariuszgromada.math.mxparser.*;
 
 
@@ -22,7 +24,6 @@ import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOpti
 import org.hipparchus.util.Pair;
 
 
-
 import org.hipparchus.linear.Array2DRowRealMatrix;
 import org.hipparchus.linear.ArrayRealVector;
 import org.hipparchus.linear.RealMatrix;
@@ -34,6 +35,16 @@ import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOpti
 import org.hipparchus.util.Pair;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.*;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
+
+
+import org.hipparchus.analysis.MultivariateFunction;
+import org.hipparchus.optim.InitialGuess;
+import org.hipparchus.optim.MaxEval;
+import org.hipparchus.optim.PointValuePair;
+import org.hipparchus.optim.nonlinear.scalar.GoalType;
+import org.hipparchus.optim.nonlinear.scalar.ObjectiveFunction;
+import org.hipparchus.optim.nonlinear.scalar.noderiv.BOBYQAOptimizer;
+import org.hipparchus.optim.SimpleBounds;
 
 
 public class KalibrierungFunktion {
@@ -324,6 +335,81 @@ public class KalibrierungFunktion {
     }
 
 
+
+    public double[] berechneUEnergie(
+            double[] params, List<String[]> para_var, List<Probe> proben,
+            boolean bedingung, String para,        String funktion,
+            Map<String, Double> funktionsParameter,
+            double x1, double x2    //Schranken
+            //Double xWert  bekomme von Probe
+    ) {
+        double[] geo_ele = new double[proben.size()];
+
+        String paraClean = filterPara(para, para_var, bedingung);
+        List<Double> uEnergieListe = new ArrayList<>(proben.size());
+
+        for (int j = 0; j < proben.size(); j++) {
+            Probe probe = proben.get(j);
+            List<String> parts = new ArrayList<>();
+            for (int i = 0; i < params.length; i++)
+                parts.add(para_var.get(i)[0] + "=" + sciFormat.format(params[i]));
+
+            if (bedingung) {
+                for (int i = 0; i < params.length; i++) {
+                    if (para_var.get(i)[0].equals("Einfallswinkelalpha"))
+                        parts.add("Einfallswinkelbeta=" + sciFormat.format(90 - params[i]));
+                    else if (para_var.get(i)[0].equals("Einfallswinkelbeta"))
+                        parts.add("Einfallswinkelalpha=" + sciFormat.format(90 - params[i]));
+                }
+            }
+            String einstellung = parts.stream()
+                    .map(s -> s.replace(",", "."))
+                    .collect(Collectors.joining(", "));
+            if (!paraClean.isBlank()) einstellung += ", " + paraClean;
+
+            CalcIBuilder builder = new CalcIBuilder().setProbe(probe);
+            applySettingsToBuilder(builder, einstellung);
+            List<Verbindung> fr = copyFilterList(filterRöhre);  //Ohne Modulation!
+
+
+
+            for (Verbindung fil : fr) {
+                applyModulation(fil, funktion, funktionsParameter, x1, x2); //derzeit nur 1 Segment möglich, apply muss sonst geändert werden x1,x2
+            }
+
+            builder.setFilterRöhre(fr);
+            builder.setFilterDet(filterDet);
+            CalcI calc = builder.build();
+            PreparedValues pv = calc.werteVorbereitenAlle();
+
+
+            double[] konz = probe.getElemente().size() == 1 ? new double[]{1.0}
+                    : calc.berechneRelKonzentrationen(calc, pv, 100);
+            double[] intensitaeten = calc.berechneSummenintensitaetMitKonz(konz);
+            double[] geo = calc.geometriefaktor(probe.getIntensitäten(), intensitaeten);
+
+            geo_ele[j] = Arrays.stream(geo).average().orElse(Double.NaN);
+
+            double[] mittlereEnergie = probe.berechneMittlereEnergieProElement();
+            double uEnergie = 0;
+            double geo_mittel = 0;
+            StringBuilder symboleBuilder = new StringBuilder();
+
+            for (int i = 0; i < geo.length; i++) {
+                uEnergie += mittlereEnergie[i] * konz[i];
+                geo_mittel += geo[i];
+                String symbol = probe.getElemente().get(i).getSymbol();
+                if (i > 0) symboleBuilder.append(", ");
+                symboleBuilder.append(symbol);
+            }
+            uEnergieListe.add(uEnergie);
+
+        }
+        double[] out = uEnergieListe.stream().mapToDouble(Double::doubleValue).toArray();
+        return out;
+    }
+
+
     private static String normalizeKey(String key) {
         if (key == null) return "";
         String k = key.trim().toLowerCase(Locale.ROOT);
@@ -607,6 +693,179 @@ public class KalibrierungFunktion {
         for (int k = 0; k < p; k++) out.put(names.get(k), sol[k]);
         return out;
     }
+
+
+
+    // 1) Neuer Scorer: arbeitet auf den TRANSFORMIERTEN Residuen aus berechneResiduen(...)
+    private double scoreFromResiduenTrans(double[] rT, boolean useL1) {
+        if (useL1) {
+            // L1 ~ Sum(|r|)  == Sum(rT^2) (bis auf konst. eps*n)
+            double s = 0.0;
+            for (double v : rT) s += v*v;
+            return s;
+        } else {
+            // RSS == Sum(r^2) == Sum(|r|^2) ~ Sum( (rT^2)^2 ) = Sum(rT^4)
+            double s = 0.0;
+            for (double v : rT) { double v2 = v*v; s += v2*v2; }
+            return s;
+        }
+    }
+
+
+
+    // 2) Coarse-Search jetzt über berechneResiduen(...)
+    public LinkedHashMap<String, Double> coarseSearchFunktionsParameter(
+            double[] fixedParams,
+            List<String[]> para_var,
+            List<Probe> proben,
+            boolean bedingung,
+            String para,
+            String funktion,
+            LinkedHashMap<String, double[]> bounds,
+            int nSamples,
+            long seed,
+            double x1, double x2,
+            boolean useL1
+    ) {
+        if (bounds == null || bounds.isEmpty())
+            throw new IllegalArgumentException("bounds darf nicht leer sein.");
+        if (nSamples <= 0) nSamples = 1000;
+
+        Random rng = new Random(seed);
+        LinkedHashMap<String, Double> best = null;
+        double bestScore = Double.POSITIVE_INFINITY;
+
+        // Mitte der Bounds
+        {
+            LinkedHashMap<String, Double> center = new LinkedHashMap<>();
+            for (Map.Entry<String, double[]> e : bounds.entrySet()) {
+                double lo = Math.min(e.getValue()[0], e.getValue()[1]);
+                double hi = Math.max(e.getValue()[0], e.getValue()[1]);
+                center.put(e.getKey(), 0.5*(lo+hi));
+            }
+            double[] rT = berechneResiduen(fixedParams, para_var, proben, bedingung, para, funktion, center, x1, x2);
+            double sc = scoreFromResiduenTrans(rT, useL1);
+            if (sc < bestScore) { bestScore = sc; best = new LinkedHashMap<>(center); }
+        }
+
+        // Zufallssamples
+        for (int t = 0; t < nSamples; t++) {
+            LinkedHashMap<String, Double> trial = new LinkedHashMap<>();
+            for (Map.Entry<String, double[]> e : bounds.entrySet()) {
+                double lo = Math.min(e.getValue()[0], e.getValue()[1]);
+                double hi = Math.max(e.getValue()[0], e.getValue()[1]);
+                trial.put(e.getKey(), lo + rng.nextDouble()*(hi-lo));
+            }
+            double[] rT = berechneResiduen(fixedParams, para_var, proben, bedingung, para, funktion, trial, x1, x2);
+            double sc = scoreFromResiduenTrans(rT, useL1);
+            if (sc < bestScore) { bestScore = sc; best = new LinkedHashMap<>(trial); }
+        }
+
+        // kurze Ausgabe
+        String bestLine = best.entrySet().stream()
+                .map(e -> e.getKey() + "=" + String.format(java.util.Locale.US, "%.6g", e.getValue()))
+                .collect(Collectors.joining(", "));
+        System.out.printf(java.util.Locale.US, "[PRE] best (%s) = %.6e%n", useL1 ? "L1" : "RSS", bestScore);
+        System.out.println("[PRE] start = " + bestLine);
+        return best;
+    }
+
+
+
+
+    public Map<String, Double> fitFunktionsParameterBOBYQA(
+            double[] fixedParams,                // <— HIER rein
+            List<String[]> para_var,
+            List<Probe> proben,
+            boolean bedingung,
+            String para,
+            String funktion,
+            LinkedHashMap<String, Double> startMap,
+            double x1, double x2,
+            double[] lb, double[] ub            // Bounds
+    ) {
+        final List<String> names = new ArrayList<>(startMap.keySet());
+        final int p = names.size();
+        final double[] start = new double[p];
+        for (int k = 0; k < p; k++) start[k] = startMap.get(names.get(k));
+
+        MultivariateFunction cost = theta -> {
+            Map<String, Double> θ = new LinkedHashMap<>();
+            for (int k = 0; k < p; k++) θ.put(names.get(k), theta[k]);
+            double[] r = berechneResiduen(fixedParams, para_var, proben, bedingung, para,
+                    funktion, θ, x1, x2);
+            double l1 = 0.0; for (double v : r) l1 += Math.abs(v);
+            return l1; // L1 minimieren
+        };
+
+        int m = 2*p + 1; // Interpolationspunkte
+        BOBYQAOptimizer opt = new BOBYQAOptimizer(m);
+        PointValuePair sol = opt.optimize(
+                new MaxEval(20000),
+                new ObjectiveFunction(cost),
+                GoalType.MINIMIZE,
+                new InitialGuess(start),
+                new SimpleBounds(lb, ub)
+        );
+
+        double[] best = sol.getPoint();
+        LinkedHashMap<String, Double> out = new LinkedHashMap<>();
+        for (int k = 0; k < p; k++) out.put(names.get(k), best[k]);
+        return out;
+    }
+
+
+
+    public static String buildLagrangeExpr(double[] xs, double[] ys) {
+        if (xs == null || ys == null || xs.length != ys.length)
+            throw new IllegalArgumentException("xs und ys müssen gleich lang sein.");
+        int n = xs.length;
+        if (n == 0) return "0";
+        if (n == 1) return String.format(Locale.US, "%.16g", ys[0]);
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(" + ");
+            // yi * Π_{j≠i} (x - xj)/(xi - xj)
+            sb.append("(").append(String.format(Locale.US, "%.16g", ys[i])).append(")");
+            for (int j = 0; j < n; j++) {
+                if (j == i) continue;
+                double den = xs[i] - xs[j];
+                if (Math.abs(den) == 0.0) {
+                    throw new IllegalArgumentException("xs enthalten doppelte Werte bei i=" + i + ", j=" + j);
+                }
+                sb.append("*((")
+                        .append("x - ").append(String.format(Locale.US, "%.16g", xs[j]))
+                        .append(")/(")
+                        .append(String.format(Locale.US, "%.16g", den))
+                        .append("))");
+            }
+        }
+        return sb.toString();
+    }
+
+
+    public static String buildLagrangeExprShifted(double[] xs, double[] geo, double x0) {
+        if (xs == null || geo == null || xs.length != geo.length)
+            throw new IllegalArgumentException("xs und geo müssen gleich lang sein.");
+        double[] ys = new double[geo.length];
+        //for (int i = 0; i < geo.length; i++) ys[i] = geo[i] - x0;
+        for (int i = 0; i < geo.length; i++) ys[i] = x0 / geo[i];
+        return buildLagrangeExpr(xs, ys);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

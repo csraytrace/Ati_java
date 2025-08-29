@@ -89,7 +89,7 @@ public class CalcI {
         this.probe = probe;
         this.konzentration = probe.getIntensitäten();
         this.pv = werteVorbereitenAlle();
-        //System.out.println(charzucont);
+        //System.out.println(Kontaktmaterialdicke);
 
     }
 

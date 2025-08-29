@@ -3,7 +3,7 @@ package org.example;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class KaliFktTest {
+public class TestLagrangeInterpolation {
 
 
 
@@ -112,10 +112,10 @@ public class KaliFktTest {
                 "d",0.,
                 "e",0.
                 //"a", -0.0036822973031124333,    // 0 ⇒ nur Offset b
-               // "b", 0.13329511108092246,
-               // "c",0.33629628051289584
+                // "b", 0.13329511108092246,
+                // "c",0.33629628051289584
         );
-        double x1 = 0.0;    // Modulationsfenster (Schranken)
+        double x1 = 0.05;    // Modulationsfenster (Schranken)
         double x2 = Emax;
 
         double[] residuen = kal.berechneResiduen(
@@ -124,13 +124,9 @@ public class KaliFktTest {
                 funktion, funktionsParameter,
                 x1, x2);
 
-
-
         System.out.println("Residuen: " + Arrays.stream(residuen)
                 .mapToObj(v -> String.format(Locale.US, "%.6g", v))
                 .collect(Collectors.joining(", ")));
-
-
 
         double[] geo = kal.berechneGeo(
                 startwerte, paraVar, probeliste,
@@ -140,10 +136,6 @@ public class KaliFktTest {
         System.out.println("Geo: " + Arrays.stream(geo)
                 .mapToObj(v -> String.format(Locale.US, "%.6g", v))
                 .collect(Collectors.joining(", ")));
-
-
-        System.out.println(kal.mittlereAbweichung(geo));
-        System.out.println(kal.mittelGeo(geo));
 
         double[] moxwerte = kal.berechneUEnergie(
                 startwerte, paraVar, probeliste,
@@ -180,12 +172,18 @@ public class KaliFktTest {
         System.out.println(MoxfktClamped);
 
 
+        double[] ywerte = Arrays.stream(geo)
+                .map(v -> x0 / v)
+                .filter(Double::isFinite)
+                .toArray();
+
+        //moxwerte xWerte
 
 
+        PiecewiseModel gelb = PiecewiseModel.fromPolyline(moxwerte, ywerte, null, null);
 
         for (Verbindung v : filter) {
-            v.clearModulation(1.0);// außerhalb = 1
-            v.addModulationSegment(MoxfktClamped, x1, true, 25, true); // Formel gilt auf [x1,x2]
+            gelb.applyToFilter(v, null); // oder null, wenn du nicht multiplizieren willst
         }
 
 
@@ -194,122 +192,85 @@ public class KaliFktTest {
 
 
 
+        //for (Verbindung v : filter) {
+         //   v.clearModulation(1.0);// außerhalb = 1
+        //    v.addModulationSegment(MoxfktClamped, x1, true, 25, true); // Formel gilt auf [x1,x2]
+        //}
+
+
+
+        List<Double> geoNeuListe = new ArrayList<>();
+
+
+        for (Probe sample : probeliste) {
+
+
+            CalcI calc = new CalcI(
+                    "MCMASTER.TXT",  // dateipfad
+                    sample,
+                    "widerschwinger", // Röhrentyp (oder "lovescott")
+                    "Rh",             // Röhrenmaterial
+                    18.267463928051775, 71.733,           // Einfallswinkel alpha, beta
+                    0,                // Fensterwinkel
+                    1,                // sigma
+                    0.1,                // charzucontL
+                    "Be",             // Fenstermaterial Röhre
+                    125,              // Fensterdicke Röhre (µm)
+                    1,                // Raumwinkel
+                    0.01,             // Röhrenstrom (A)
+                    Emin, Emax,            // Emin, Emax
+                    step,             // step
+                    30,               // Messzeit
+                    1.0771,                // charzucont
+                    "Be",             // Fenstermaterial Detektor
+                    7.62,             // Fensterdicke Detektor (µm)
+                    0,                // phi Detektor
+                    "Au",             // Kontaktmaterial
+                    10.035,               // Kontaktmaterialdicke (nm)
+                    1,                // Bedeckungsfaktor
+                    45,               // palpha Grad
+                    45,               // pbeta Grad
+                    "Si",             // Detektormaterial
+                    0.0,             // Totschicht (µm)
+                    2.8623,                // activeLayer (mm)
+                    filter,            // Filter-Liste
+                    null
+            );
+            ;
+            System.out.println(sample.getElemente().get(0).getSymbol());
+
+
+            PreparedValues pv = calc.werteVorbereitenAlle();
+            double[] origKonz = calc.konzentration;  // oder aus Probe holen
+            double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000);
+
+            double[] berechInt =  calc.berechneSummenintensitaetMitKonz(relKonz);
+            double[] geoneu = calc.geometriefaktor(origKonz,berechInt);
+
+            if (geoneu != null && geoneu.length > 0 && Double.isFinite(geoneu[0])) {
+                geoNeuListe.add(geoneu[0]);
+
+                for (int i = 0; i < geoneu.length; i++) {
+                    System.out.println(geoneu[i]);
+                }
+
+            }
 
 
 
 
+        }
 
+        double[] geoNeuArray = geoNeuListe.stream().mapToDouble(Double::doubleValue).toArray();
 
-/*
+// optional: ausgeben
+        System.out.println("geoNeu[0] pro Probe: " +
+                java.util.Arrays.toString(geoNeuArray));
 
-
-
-        LinkedHashMap<String, double[]> bounds = new LinkedHashMap<>();
-        bounds.put("a", new double[]{-1e-3,  1e-3});   // sinnvoll einschränken!
-        bounds.put("b", new double[]{-1e-1,  1e-1});
-        bounds.put("c", new double[]{ 0.8,   1.2});
-        bounds.put("d", new double[]{-1e-2,  1e-2});   // exp-Term klein halten
-        bounds.put("e", new double[]{-5e-2,  5e-2});   // sonst exp(x*e) explodiert
-
-        int    nSamples = 2000;   // Anzahl Zufalls-Samples in der Vorsuche
-        long   seed     = 42L;    // Reproduzierbarkeit
-        boolean useL1   = true;   // Vorsuche nach L1 (robuster)
-
-// (A) Ein-Schritt-API: Vorsuche + LM in einem Rutsch
-        Map<String, Double> bestGlobal = kal.coarseSearchFunktionsParameter(
-                startwerte,               // deine fixen "params"
-                paraVar,
-                probeliste,
-                bedingung,
-                para,
-                funktion,
-                bounds,
-                nSamples,
-                seed,
-                x1, x2,
-                useL1                      // true = L1-Score in der Vorsuche
-        );
-        System.out.println("Best (global init + LM): " + bestGlobal);
-
-// optional: Ergebnis evaluieren
-        double[] geoBest = kal.berechneGeo(
-                startwerte, paraVar, probeliste,
-                bedingung, para, funktion, bestGlobal, x1, x2
-        );
-        System.out.println("Geo(best): " + Arrays.stream(geoBest)
-                .mapToObj(v -> String.format(Locale.US, "%.6g", v))
-                .collect(Collectors.joining(", ")));
-        System.out.println("mittlereAbw(best): " + KalibrierungFunktion.mittlereAbweichung(geoBest));
-
-
-// (B) Falls du die Vorsuche getrennt willst (und danach selbst LM startest):
-/*
-LinkedHashMap<String, Double> coarseStart = kal.coarseSearchFunktionsParameter(
-        fixedParams, paraVar, probeliste, bedingung, para, funktion,
-        bounds, nSamples, seed, x1, x2, useL1
-);
-Map<String, Double> bestFromCoarse = kal.fitFunktionsParameterLM(
-        fixedParams, paraVar, probeliste, bedingung, para, funktion,
-        coarseStart, x1, x2
-);
-System.out.println("Best (coarse + LM): " + bestFromCoarse);
-*/
+        System.out.println(kal.mittlereAbweichung(geoNeuArray));
 
 
 
-
-
-
-
-
-        // fixe "params" (die NICHT optimiert werden)
-        double[] fixedParams = startwerte; // oder was du willst
-
-// Startwerte für die Funktions-Parameter in stabiler Reihenfolge:
-        LinkedHashMap<String,Double> startMap = new LinkedHashMap<>();
-        startMap.put("a", 0.0);
-        startMap.put("b", 0.0);
-        startMap.put("c", 1.0);
-        startMap.put("d", 0.0);
-        startMap.put("e", 0.0);
-
-
-
-
-
-
-
-/*
-
-        Map<String,Double> bestBOBYQA = kal.fitFunktionsParameterBOBYQA(
-                startwerte,              // fixedParams
-                paraVar, probeliste,
-                true,
-                para,
-                funktion,
-                startMap,
-                0.0, Emax,
-                new double[]{-1e-3, -1e-1, 0.8, -1e-2, -5e-2}, // lb
-                new double[]{ 1e-3,  1e-1, 1.2,  1e-2,  5e-2}  // ub
-        );
-        System.out.println("BOBYQA: " + bestBOBYQA);
-
-
-
-
-
-        Map<String,Double> best = kal.fitFunktionsParameterLM(
-                fixedParams, paraVar, probeliste,
-                true,                      // bedingung
-                para,               // para
-                funktion,         // funktion
-                startMap,
-                0.0, Emax                 // x1, x2 Fenster
-        );
-
-        System.out.println("Optimierte Funktions-Parameter: " + best);
-
-*/
 
     }
 }

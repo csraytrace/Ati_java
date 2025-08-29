@@ -102,16 +102,56 @@ public final class MathParser {
 
     /* -------------------- Auswertung -------------------- */
 
+    private boolean clampOutput = false;
+    private double yMin = Double.NEGATIVE_INFINITY;
+    private double yMax = Double.POSITIVE_INFINITY;
+
+    /** Optional: Ausgabe auf [yMin, yMax] klemmen */
+    public MathParser setOutputClamp(double yMin, double yMax) {
+        if (!Double.isFinite(yMin) || !Double.isFinite(yMax) || yMin > yMax)
+            throw new IllegalArgumentException("Ungültiger Wertebereich");
+        this.clampOutput = true;
+        this.yMin = yMin;
+        this.yMax = yMax;
+        return this;
+    }
+
+    /** Clamp wieder deaktivieren */
+    public MathParser clearOutputClamp() {
+        this.clampOutput = false;
+        this.yMin = Double.NEGATIVE_INFINITY;
+        this.yMax = Double.POSITIVE_INFINITY;
+        return this;
+    }
+
+
+
+
+
+
+
     /** Wert h(x) – stückweise, inkl. Fehlerschutz; außerhalb -> defaultValue */
     public double evaluate(double x) {
         for (Segment s : segs) {
             if (s.inside(x, eps)) {
                 double y = s.f.calculate(x);
                 if (Double.isNaN(y) || Double.isInfinite(y)) return defaultValue;
-                return Math.abs(y); //statt return y, damit immer positv
+
+                // immer positiv
+                y = Math.abs(y);
+
+
+                // hier begrenzen
+                if (clampOutput) {
+                    if (y < yMin) y = yMin;
+                    else if (y > yMax) y = yMax;
+                }
+                //if (y<1) y += 0.5*y;
+                //else y -=0.5*y;
+                return y;
             }
         }
-        return defaultValue;
+        return defaultValue; // außerhalb: unverändert defaultValue
     }
 }
 

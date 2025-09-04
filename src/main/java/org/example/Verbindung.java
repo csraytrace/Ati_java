@@ -19,7 +19,7 @@ public class Verbindung {
     public Verbindung(String[] symbole, double[] konzentrationen,  double Emin, double Emax, double step, String dateipfad, double dichte) {
         this.symbole = symbole;
         this.konzentrationen = konzentrationen;
-        this.Emin = Emin;
+        this.Emin = (Emin <= 0 ? step : Emin);
         this.Emax = Emax;
         this.step = step;
         this.dateipfad = dateipfad;

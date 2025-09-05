@@ -29,6 +29,10 @@ public class JavaFx extends Application {
 
     // Model
     private final BooleanProperty exampleMode = new SimpleBooleanProperty(false);
+    private double globalStep() { return parseDouble(energieStep, 0.01); }
+    private double globalEmax() { return parseDouble(xRayTubeVoltage, 35.0); }
+    private static double globalEmin = 0;
+    private static final String DATA_FILE = "MCMASTER.TXT";
 
     // Tube
     private TextField tubeMaterial;
@@ -203,6 +207,17 @@ public class JavaFx extends Application {
         Label lblMeasurementTime = new Label("Measurement Time [s]:");
         measurementTime = new TextField(); measurementTime.setPrefColumnCount(breite);
 
+        Tooltip ttValues = new Tooltip("Just a parameter to manipulate the spectrum.\n" +
+                "For default value leave the box empty or take the value from View→Example Mode");
+        ttValues.setShowDelay(javafx.util.Duration.millis(300));
+        lblCharZuCont.setTooltip(ttValues);
+        lblCharZuContL.setTooltip(ttValues);
+        lblSigmaConst.setTooltip(ttValues);
+
+
+
+
+
 
 
         // Grid links
@@ -213,15 +228,16 @@ public class JavaFx extends Application {
         grid.addRow(r++, TubeMaterialLabel, tubeMaterial);
         grid.addRow(r++, ElectronIncidentAngleLabel, electronIncidentAngle);
         grid.addRow(r++, lblElectronTakeoffAngle, electronTakeoffAngle);
-        grid.addRow(r++, lblCharZuCont, charZuCont);
-        grid.addRow(r++, lblCharZuContL, charZuContL);
         grid.addRow(r++, lblWindowMaterial, windowMaterial);
         grid.addRow(r++, lblWindowMaterialThickness, windowMaterialThickness);
         grid.addRow(r++, lblTubeCurrent, tubeCurrent);
         grid.addRow(r++, lblXRayTubeVoltage, xRayTubeVoltage);
-        grid.addRow(r++, lblSigmaConst, sigmaConst);
         grid.addRow(r++, lblEnergieStep, energieStep);
         grid.addRow(r++, lblMeasurementTime, measurementTime);
+        grid.addRow(r++, lblCharZuCont, charZuCont);
+        grid.addRow(r++, lblCharZuContL, charZuContL);
+        grid.addRow(r++, lblSigmaConst, sigmaConst);
+
 
 
 // --- Bild rechts neben dem Grid ---
@@ -711,13 +727,6 @@ public class JavaFx extends Application {
 
 
 
-    // Alle Filter direkt als Verbindung
-    private final ObservableList<Verbindung> filterVerbindungen = FXCollections.observableArrayList();
-
-    // Wir merken uns die Formeleingabe (String) je Verbindung für die Anzeige
-    private final java.util.Map<Verbindung, String> formulaText = new java.util.IdentityHashMap<>();
-
-    private static final String DATA_FILE = "MCMASTER.TXT";
 
     // Parser
     private static double parseDouble(TextField tf, double def) {
@@ -736,150 +745,132 @@ public class JavaFx extends Application {
     }
 
     // Globale Energieparameter aus dem Tube-Tab
-    private double globalStep() { return parseDouble(energieStep, 0.05); }
-    private double globalEmax() { return parseDouble(xRayTubeVoltage, 35.0); }
-    private static double normEmin(double emin, double step) { return (emin <= 0) ? step : emin; }
+
 
     // Verbindung aus UI-Spezifikation bauen
-    private Verbindung buildVerbindungFromSpec(String compound, double density, double thicknessUm,
-                                               double emin, double emax, double step) {
+    private Verbindung buildVerbindungFromSpec(String compound, double density, double thicknessCm
+                                               ) {
         Funktionen fk = new FunktionenImpl();
-        double useEmin = normEmin(emin, step);
-        Verbindung parsed = fk.parseVerbindung(compound, useEmin, emax, step, DATA_FILE);
+        double useEmin = globalEmin;
+        Verbindung parsed = fk.parseVerbindung(compound, useEmin, globalEmax(), globalStep(), DATA_FILE);
         Verbindung v = new Verbindung(parsed.getSymbole(), parsed.getKonzentrationen(),
-                useEmin, emax, step, DATA_FILE, density);
-        v.setFensterDickeCm(thicknessUm * 1e-4); // µm -> cm
+                useEmin,  globalEmax(), globalStep(), DATA_FILE, density);
+        v.setFensterDickeCm(thicknessCm);
         v.setModulationIdentitaet();
         return v;
     }
 
-    // Verbindung in der Liste ersetzen + Formula merken
-    private void replaceVerbindung(int index, Verbindung oldV, Verbindung newV, String formula) {
-        filterVerbindungen.set(index, newV);
-        formulaText.remove(oldV);
-        formulaText.put(newV, formula);
-    }
+
+    // Zwei getrennte Filter-Listen
+    private final ObservableList<Verbindung> tubeFilterVerbindungen = FXCollections.observableArrayList();
+    private final ObservableList<Verbindung> detFilterVerbindungen  = FXCollections.observableArrayList();
+
+    // Anzeige-Text (Formel/Name) je Verbindung
+    private final java.util.Map<Verbindung, String> tubeFormulaText = new java.util.IdentityHashMap<>();
+    private final java.util.Map<Verbindung, String> detFormulaText  = new java.util.IdentityHashMap<>();
 
 
-    private Tab buildFiltersTab() {
-        // Beispiel-Start: drei Verbindungen hinzufügen
-        if (filterVerbindungen.isEmpty()) {
-            Verbindung v1 = buildVerbindungFromSpec("Al", 2.70, 50, 0.0, 35.0, 0.05);
-            Verbindung v2 = buildVerbindungFromSpec("Rh", 1.42, 25, 0.0, 35.0, 0.05);
-            Verbindung v3 = buildVerbindungFromSpec("Be", 1.85, 125, 0.0, 35.0, 0.05);
-            filterVerbindungen.addAll(v1, v2, v3);
-            formulaText.put(v1, "Al");
-            formulaText.put(v2, "Rh");
-            formulaText.put(v3, "Be");
+
+
+    private VBox buildFilterColumn(String title,
+                                   ObservableList<Verbindung> listData,
+                                   java.util.Map<Verbindung,String> textMap) {
+
+        // Startwerte (nur beim ersten Aufruf)
+        if (listData.isEmpty()) {
+            Verbindung v1 = buildVerbindungFromSpec("Al", 2.70, 50);
+            Verbindung v2 = buildVerbindungFromSpec("Rh", 12.41, 25);
+            listData.addAll(v1, v2);
+            textMap.put(v1, "Al");
+            textMap.put(v2, "Rh");
         }
 
-        ListView<Verbindung> list = new ListView<>(filterVerbindungen);
+        ListView<Verbindung> list = new ListView<>(listData);
         list.setCellFactory(lv -> new ListCell<>() {
             private final TextField tfComp = new TextField();
             private final TextField tfRho  = new TextField();
             private final TextField tfTh   = new TextField();
-            private final TextField tfEmin = new TextField();
-            private final TextField tfEmax = new TextField();
-            private final Button btnDup = new Button("Duplicate");
-            private final Button btnDel = new Button("Delete");
+            private final Button btnDel    = new Button("Delete");
             private final VBox card;
 
             {
-                tfComp.setPromptText("Compound / Material");
-                tfRho.setPromptText("ρ [g/cm³]");
-                tfTh.setPromptText("d [µm]");
-                tfEmin.setPromptText("Emin [keV]");
-                tfEmax.setPromptText("Emax [keV]");
 
                 tfComp.setPrefColumnCount(14);
                 tfRho.setPrefColumnCount(6);
                 tfTh.setPrefColumnCount(6);
-                tfEmin.setPrefColumnCount(6);
-                tfEmax.setPrefColumnCount(6);
 
-                HBox row1 = new HBox(10, new Label("Material:"), tfComp);
-                HBox row2 = new HBox(10,
-                        new Label("ρ:"), tfRho,
-                        new Label("d:"), tfTh,
-                        new Label("Emin:"), tfEmin,
-                        new Label("Emax:"), tfEmax,
-                        btnDup, btnDel
-                );
+                Label lMat = new Label("Material:");
+                //lMat.setTooltip(new Tooltip("Chemische Formel/Bezeichnung, z. B. Al, Be oder C22H10N2O5."));
+
+                Label lRho = new Label("ρ [g/cm³]:");
+                Tooltip ttRho = new Tooltip("Density of the material in g/cm³.");
+                ttRho.setShowDelay(javafx.util.Duration.millis(300));
+                lRho.setTooltip(ttRho);
+
+                Label lD = new Label("d [cm]:");
+                Tooltip ttD = new Tooltip("Thickness in cm (0.005 cm = 50 µm)");
+                ttD.setShowDelay(javafx.util.Duration.millis(300));
+                ttD.setWrapText(true);
+                ttD.setMaxWidth(260);
+                lD.setTooltip(ttD);
+
+
+                HBox row1 = new HBox(10, lMat, tfComp);
+                HBox row2 = new HBox(10, lRho, tfRho, lD, tfTh, btnDel);
                 row1.setAlignment(Pos.CENTER_LEFT);
                 row2.setAlignment(Pos.CENTER_LEFT);
 
                 card = new VBox(6, row1, row2);
                 card.setPadding(new Insets(10));
                 card.setStyle("""
-                -fx-background-color: -fx-control-inner-background;
-                -fx-background-radius: 10;
-                -fx-border-color: -fx-box-border;
-                -fx-border-radius: 10;""");
+    -fx-background-color: -fx-control-inner-background;
+    -fx-background-radius: 10;
+    -fx-border-color: -fx-box-border;
+    -fx-border-radius: 10;""");
             }
 
             @Override protected void updateItem(Verbindung v, boolean empty) {
                 super.updateItem(v, empty);
                 if (empty || v == null) { setGraphic(null); return; }
 
-                // aktuelle Werte in die Felder schreiben
-                String compShown = formulaText.getOrDefault(v, "");
+                String compShown = textMap.getOrDefault(v, "");
                 tfComp.setText(compShown);
                 tfRho.setText(String.valueOf(v.getDichte()));
-                tfTh.setText(String.valueOf(Math.round(v.getFensterDickeCm() * 1e4 * 100.0)/100.0)); // cm->µm, 2 Nachkomma
-                tfEmin.setText(String.valueOf(v.getEmin()));
-                tfEmax.setText(String.valueOf(v.getEmax()));
+                tfTh.setText(String.valueOf(v.getFensterDickeCm()));
 
-                // Handler: Rebuild bei Änderungen (außer Dicke → direkter Setter)
+                // Material/Dichte ändern → Verbindung neu bauen & Item ersetzen
                 Runnable rebuild = () -> {
                     int idx = getIndex();
                     if (idx < 0) return;
-                    String comp = parseFormula(tfComp, compShown.isBlank()? "Al" : compShown);
+                    String comp = parseFormula(tfComp, compShown.isBlank() ? "Al" : compShown);
                     double rho  = parseDouble(tfRho,  v.getDichte());
-                    double thUm = parseDouble(tfTh,   v.getFensterDickeCm()*1e4);
-                    double emin = parseDouble(tfEmin, v.getEmin());
-                    double emax = parseDouble(tfEmax, v.getEmax());
-                    double step = v.getStep(); // bleib bei der Verbindung, oder nimm globalStep()
+                    double thUm = parseDouble(tfTh,   v.getFensterDickeCm());
 
-                    // Achtung: Dicke hat Setter; trotzdem neu bauen, da rho/Emin/Emax keine Setter haben
-                    Verbindung neu = buildVerbindungFromSpec(comp, rho, thUm, emin, emax, step);
-                    replaceVerbindung(idx, v, neu, comp);
+                    Verbindung neu = buildVerbindungFromSpec(comp, rho, thUm);
+                    listData.set(idx, neu);
+                    textMap.remove(v);
+                    textMap.put(neu, comp);
                 };
-
                 tfComp.setOnAction(e -> rebuild.run());
                 tfRho.setOnAction(e -> rebuild.run());
-                tfEmin.setOnAction(e -> rebuild.run());
-                tfEmax.setOnAction(e -> rebuild.run());
 
-                // Dicke (µm) → direkt in bestehender Verbindung setzen
+                // Dicke kann live gesetzt werden (Setter vorhanden)
                 tfTh.setOnAction(e -> {
-                    double thUm = parseDouble(tfTh, v.getFensterDickeCm()*1e4);
-                    v.setFensterDickeCm(thUm * 1e-4);
+                    double thUm = parseDouble(tfTh, v.getFensterDickeCm());
+                    v.setFensterDickeCm(thUm );
                 });
 
-                // Buttons
-                btnDup.setOnAction(e -> {
-                    int idx = getIndex();
-                    Verbindung copy = v.copy();
-                    filterVerbindungen.add(idx + 1, copy);
-                    // Formula-Text mitnehmen
-                    formulaText.put(copy, formulaText.getOrDefault(v, ""));
-                    list.getSelectionModel().select(idx + 1);
-                    list.scrollTo(idx + 1);
-                });
-                btnDel.setOnAction(e -> filterVerbindungen.remove(v));
-
+                btnDel.setOnAction(e -> listData.remove(v));
                 setGraphic(card);
             }
         });
 
-        // Untere Controls: Add / Up / Down
+        // Spalten-Controls
         Button btnAdd = new Button("Add");
         btnAdd.setOnAction(e -> {
-            double step = globalStep();
-            double emax = globalEmax();
-            Verbindung neu = buildVerbindungFromSpec("Al", 2.70, 50.0, 0.0, emax, step);
-            filterVerbindungen.add(neu);
-            formulaText.put(neu, "Al");
+            Verbindung neu = buildVerbindungFromSpec("Al", 2.70, 50.0);
+            listData.add(neu);
+            textMap.put(neu, "Al");
             list.getSelectionModel().select(neu);
             list.scrollTo(neu);
         });
@@ -888,8 +879,8 @@ public class JavaFx extends Application {
         btnUp.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i > 0) {
-                Verbindung v = filterVerbindungen.remove(i);
-                filterVerbindungen.add(i - 1, v);
+                Verbindung v = listData.remove(i);
+                listData.add(i - 1, v);
                 list.getSelectionModel().select(i - 1);
             }
         });
@@ -897,9 +888,9 @@ public class JavaFx extends Application {
         Button btnDown = new Button("↓");
         btnDown.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
-            if (i >= 0 && i < filterVerbindungen.size() - 1) {
-                Verbindung v = filterVerbindungen.remove(i);
-                filterVerbindungen.add(i + 1, v);
+            if (i >= 0 && i < listData.size() - 1) {
+                Verbindung v = listData.remove(i);
+                listData.add(i + 1, v);
                 list.getSelectionModel().select(i + 1);
             }
         });
@@ -907,12 +898,45 @@ public class JavaFx extends Application {
         HBox controls = new HBox(8, btnAdd, new Separator(), btnUp, btnDown);
         controls.setPadding(new Insets(6, 0, 6, 0));
 
-        VBox root = new VBox(10, new Label("Filters (List / Cards) – Verbindungen"), list, controls);
-        root.setPadding(new Insets(12));
-        return new Tab("Filters", root);
+        Label header = new Label(title);
+        header.setStyle("-fx-font-weight: bold; -fx-padding: 0 0 6 0;");
+
+        VBox col = new VBox(8, header, list, controls);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        col.setPadding(new Insets(12));
+        return col;
     }
 
 
+
+    private Tab buildFiltersTab() {
+        // Linke Spalte: Röhrenfilter
+        VBox tubeCol = buildFilterColumn("Röhrenfilter", tubeFilterVerbindungen, tubeFormulaText);
+        // Rechte Spalte: Detektorfilter
+        VBox detCol  = buildFilterColumn("Detektorfilter", detFilterVerbindungen, detFormulaText);
+
+        GridPane grid = new GridPane();
+
+        ColumnConstraints c1 = new ColumnConstraints();
+        c1.setPercentWidth(50);           // ← links 45%
+        c1.setHgrow(Priority.ALWAYS);
+
+        ColumnConstraints c2 = new ColumnConstraints();
+        c2.setPercentWidth(50);           //
+        c2.setHgrow(Priority.ALWAYS);
+
+        grid.getColumnConstraints().addAll(c1, c2);
+        grid.add(tubeCol, 0, 0);
+        grid.add(detCol,  1, 0);
+        grid.setHgap(12);
+        grid.setVgap(0);
+
+        VBox root = new VBox(grid);
+        VBox.setVgrow(grid, Priority.ALWAYS);
+        root.setPadding(new Insets(0));
+
+        return new Tab("Filters", root);
+    }
 
 
 

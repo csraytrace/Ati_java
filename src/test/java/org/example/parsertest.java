@@ -9,6 +9,14 @@ import java.util.List;
 
 public class parsertest {
 
+    static PwSegment constOne(double a, double b) {
+        PwSegment s = new PwSegment();
+        s.type = SegmentType.CONSTANT;
+        s.value = 1.0;
+        s.a = a; s.b = b; s.inclA = true; s.inclB = true;
+        return s;
+    }
+
 
     public static void main(String[] args) {
         // Beispiel 1
@@ -140,6 +148,18 @@ public class parsertest {
         double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
         calcDark.printOptimizedResult(optimum, darkMatrix, Z);
+
+
+
+        PwSegment konst = constOne(2,5);
+        System.out.println("optimum optimum: " + konst.toExpressionString("3"));
+
+
+
+
+
+
+
 
 
 

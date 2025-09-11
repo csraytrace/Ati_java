@@ -15,7 +15,8 @@ public class VerbindungTest {
         double Emin = 0;
         double Emax = 30;
         double step = 0.01;
-        String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
+        //String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
+        String ver1 = "ScererCu";
 
         Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
         //System.out.println(v2.getWeight() / v1.getWeight() );

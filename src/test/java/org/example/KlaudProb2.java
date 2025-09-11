@@ -33,6 +33,7 @@ public class KlaudProb2 {
 
 
         String ver1 = "1 C38H76N2O2";
+        //String ver1 = "luft";
 
         Verbindung v1 = f.parseVerbindung(ver1, Emin, Emax, step, "McMaster.txt");
 

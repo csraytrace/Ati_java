@@ -19,11 +19,17 @@ import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 
-
+import javafx.scene.Node;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Alert.AlertType;
+import javafx.stage.Window;
+import javafx.css.PseudoClass;
 
 import javafx.util.converter.DoubleStringConverter;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.control.cell.CheckBoxTableCell;
+
+import java.util.Objects;
 
 public class JavaFx extends Application {
 
@@ -94,14 +100,15 @@ public class JavaFx extends Application {
 
         MenuBar menuBar = new MenuBar(fileMenu, viewMenu, helpMenu);
 
+
+
+
         // ----- Tabs -----
         TabPane tabs = new TabPane(
                 buildParameterTab(),
                 buildDetectorTab(),
                 buildFiltersTab(),
-                new Tab("Dashboard", padded(new Label("Dashboard Content"))),
-                new Tab("Form",  padded(new Label("Form Content"))),
-                new Tab("Table",   padded(new Label("Table Content")))
+                buildFunctionFiltersTab()
         );
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
@@ -167,6 +174,8 @@ public class JavaFx extends Application {
 
         stage.setTitle("JavaFX – Parameter Tab with Prompt Toggle + Plot Button");
         stage.setScene(scene);
+        var url = Objects.requireNonNull(getClass().getResource("/dino.png"), "Icon nicht gefunden!");
+        stage.getIcons().add(new Image(url.toExternalForm()));
         stage.show();
     }
 
@@ -739,7 +748,7 @@ public class JavaFx extends Application {
     private static String parseFormula(TextField tf, String def) {
         String s = tf.getText();
         if (s == null || s.isBlank()) return def;
-        s = s.trim();
+        //s = s.trim();
         if (s.length() <= 2) s = s.substring(0,1).toUpperCase() + (s.length()>1 ? s.substring(1).toLowerCase() : "");
         return s;
     }
@@ -775,6 +784,7 @@ public class JavaFx extends Application {
     private VBox buildFilterColumn(String title,
                                    ObservableList<Verbindung> listData,
                                    java.util.Map<Verbindung,String> textMap) {
+        final java.util.Map<Verbindung, Boolean> useMap = new java.util.IdentityHashMap<>();
 
         // Startwerte (nur beim ersten Aufruf)
         if (listData.isEmpty()) {
@@ -783,92 +793,270 @@ public class JavaFx extends Application {
             listData.addAll(v1, v2);
             textMap.put(v1, "Al");
             textMap.put(v2, "Rh");
+            useMap.put(v1, true);   // <— NEU
+            useMap.put(v2, true);
         }
 
         ListView<Verbindung> list = new ListView<>(listData);
         list.setCellFactory(lv -> new ListCell<>() {
+            // --- UI pro Karte ---
+            private final CheckBox chkUse = new CheckBox("Use");   // <— NEU
             private final TextField tfComp = new TextField();
             private final TextField tfRho  = new TextField();
             private final TextField tfTh   = new TextField();
             private final Button btnDel    = new Button("Delete");
             private final VBox card;
 
+            // Hält die aktuelle Verbindung dieser Zelle (damit Handler wissen, auf welches Item sie arbeiten)
+            private final javafx.beans.property.ObjectProperty<Verbindung> itemRef =
+                    new javafx.beans.property.SimpleObjectProperty<>();
+
+            // Parser/Helper (einmal pro Zelle)
+            private final Funktionen fk = new FunktionenImpl();
+
+            private void paintCard(boolean enabled) {
+                String base = """
+            -fx-background-radius: 10;
+            -fx-border-color: -fx-box-border;
+            -fx-border-radius: 10;""";
+                String bg = enabled
+                        ? "-fx-background-color: rgba(40,160,80,0.25);"   // grünlich
+                        : "-fx-background-color: rgba(200,60,60,0.25);";  // rötlich
+                card.setStyle(bg + base);
+            }
+            /*
+
+
+
+            // Helper: Karte einfärben (grün = aktiv, rot = inaktiv)
+            private void paintCard(boolean enabled) {
+                String base = """
+        -fx-background-insets: 0, 0;
+        -fx-background-radius: 10, 10;
+        -fx-border-color: -fx-box-border;
+        -fx-border-radius: 10;
+        """;
+
+                String stripesEnabled = """
+        -fx-background-color:
+            linear-gradient(from 0% 0% to 100% 100%,
+                rgba(60,180,95,0.35) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(60,180,95,0.35) 50%,
+                rgba(60,180,95,0.35) 75%,
+                transparent 75%),
+            rgba(255,255,255,0.75);
+        """;
+
+                String stripesDisabled = """
+        -fx-background-color:
+            linear-gradient(from 0% 0% to 100% 100%,
+                rgba(200,60,60,0.35) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(200,60,60,0.35) 50%,
+                rgba(200,60,60,0.35) 75%,
+                transparent 75%),
+            rgba(255,255,255,0.80);
+        """;
+
+                card.setStyle((enabled ? stripesEnabled : stripesDisabled) + base);
+            }
+            */
+
+
+
+
             {
+                // --------- UI bauen (einmalig) ----------
+                Label lMat = new Label("Material:");
+                Label lRho = new Label("ρ [g/cm³]:");
+                Label lD   = new Label("d [cm]:");
 
                 tfComp.setPrefColumnCount(14);
                 tfRho.setPrefColumnCount(6);
                 tfTh.setPrefColumnCount(6);
 
-                Label lMat = new Label("Material:");
-                //lMat.setTooltip(new Tooltip("Chemische Formel/Bezeichnung, z. B. Al, Be oder C22H10N2O5."));
-
-                Label lRho = new Label("ρ [g/cm³]:");
-                Tooltip ttRho = new Tooltip("Density of the material in g/cm³.");
-                ttRho.setShowDelay(javafx.util.Duration.millis(300));
-                lRho.setTooltip(ttRho);
-
-                Label lD = new Label("d [cm]:");
-                Tooltip ttD = new Tooltip("Thickness in cm (0.005 cm = 50 µm)");
-                ttD.setShowDelay(javafx.util.Duration.millis(300));
-                ttD.setWrapText(true);
-                ttD.setMaxWidth(260);
-                lD.setTooltip(ttD);
-
-
-                HBox row1 = new HBox(10, lMat, tfComp);
+                // <— HIER Checkbox in die erste Zeile aufnehmen
+                HBox row1 = new HBox(10, chkUse, lMat, tfComp);
                 HBox row2 = new HBox(10, lRho, tfRho, lD, tfTh, btnDel);
                 row1.setAlignment(Pos.CENTER_LEFT);
                 row2.setAlignment(Pos.CENTER_LEFT);
 
                 card = new VBox(6, row1, row2);
                 card.setPadding(new Insets(10));
+                // Anfangsfarbe neutral; wir setzen später per paintCard(...)
                 card.setStyle("""
-    -fx-background-color: -fx-control-inner-background;
-    -fx-background-radius: 10;
-    -fx-border-color: -fx-box-border;
-    -fx-border-radius: 10;""");
+            -fx-background-radius: 10;
+            -fx-border-color: -fx-box-border;
+            -fx-border-radius: 10;""");
+
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+
+                // --- Checkbox-Listener (nur einmal pro Zelle) ---
+                chkUse.selectedProperty().addListener((obs, oldSel, sel) -> {
+                    Verbindung v = itemRef.get();
+                    if (v == null) return;
+                    useMap.put(v, sel);   // Zustand merken
+                    paintCard(sel);       // Karte einfärben
+                });
+
+                // --------- Handler NUR EINMAL registrieren ----------
+
+                // ENTER im Material: neue Verbindung aus Name + Auto-Dichte (parsed.getDichte()), Dicke beibehalten
+                tfComp.setOnAction(e -> {
+                    Verbindung v = itemRef.get();
+                    if (v == null) return;
+
+                    String oldComp = textMap.getOrDefault(v, "");
+                    String comp    = parseFormula(tfComp, oldComp.isBlank() ? "Al" : oldComp);
+                    double thCm    = parseDouble(tfTh, v.getFensterDickeCm());
+                    double useEmin = (globalEmin <= 0 ? globalStep() : globalEmin);
+
+                    try {
+                        Verbindung parsed = fk.parseVerbindung(comp, useEmin, globalEmax(), globalStep(), DATA_FILE);
+                        double rhoAuto    = parsed.getDichte();
+
+                        Verbindung neu = new Verbindung(
+                                parsed.getSymbole(), parsed.getKonzentrationen(),
+                                useEmin, globalEmax(), globalStep(), DATA_FILE,
+                                rhoAuto
+                        );
+                        neu.setFensterDickeCm(thCm);
+                        neu.setModulationIdentitaet();
+
+                        // Validierung (vor dem Einsetzen)
+                        if (neu.getKonzentrationen() == null || neu.getKonzentrationen().length == 0) {
+                            throw new IllegalArgumentException("Keine Konzentrationen aus Formel \"" + comp + "\" ermittelt.");
+                        }
+
+                        int idx = getIndex();
+                        if (idx >= 0) {
+                            // bisherigen Use-Status übernehmen
+                            boolean wasOn = useMap.getOrDefault(v, Boolean.TRUE);
+                            useMap.put(neu, wasOn);
+                            useMap.remove(v);
+
+                            // zuerst Map aktualisieren, dann ersetzen
+                            textMap.put(neu, comp);
+                            textMap.remove(v);
+                            getListView().getItems().set(idx, neu);
+
+                            // Auto-Dichte in Feld schreiben
+                            tfRho.setText(String.valueOf(rhoAuto));
+
+                            // Karte entsprechend einfärben
+                            paintCard(wasOn);
+                        }
+                        clearFieldError(tfComp);
+
+                    } catch (IllegalArgumentException ex) {
+                        showError(tfComp, "Ungültige Verbindung:\n" + comp + "\n\n" + ex.getMessage());
+                        tfComp.setText(oldComp);
+                        markFieldError(tfComp);
+                    }
+                });
+
+                // Optional: bei Fokus-Verlust so behandeln wie ENTER
+                tfComp.focusedProperty().addListener((o, was, is) -> {
+                    if (!is) tfComp.fireEvent(new javafx.event.ActionEvent());
+                });
+
+                // ENTER in ρ: neue Verbindung mit exakt dieser Dichte bauen (Formel + Dicke beibehalten)
+                tfRho.setOnAction(e -> {
+                    Verbindung v = itemRef.get();
+                    if (v == null) return;
+
+                    String comp = parseFormula(tfComp, textMap.getOrDefault(v, "Al"));
+                    double thCm = parseDouble(tfTh,  v.getFensterDickeCm());
+                    double rho  = parseDouble(tfRho, v.getDichte());   // Eingabe oder Fallback
+                    double useEmin = (globalEmin <= 0 ? globalStep() : globalEmin);
+
+                    try {
+                        Verbindung parsed = fk.parseVerbindung(comp, useEmin, globalEmax(), globalStep(), DATA_FILE);
+                        Verbindung neu = new Verbindung(
+                                parsed.getSymbole(), parsed.getKonzentrationen(),
+                                useEmin, globalEmax(), globalStep(), DATA_FILE,
+                                rho
+                        );
+                        neu.setFensterDickeCm(thCm);
+                        neu.setModulationIdentitaet();
+
+                        // Validierung (vor dem Einsetzen)
+                        if (neu.getKonzentrationen() == null || neu.getKonzentrationen().length == 0) {
+                            throw new IllegalArgumentException("Keine Konzentrationen.");
+                        }
+
+                        int idx = getIndex();
+                        if (idx >= 0) {
+                            boolean wasOn = useMap.getOrDefault(v, Boolean.TRUE);
+                            useMap.put(neu, wasOn);
+                            useMap.remove(v);
+
+                            textMap.put(neu, comp);
+                            textMap.remove(v);
+                            getListView().getItems().set(idx, neu);
+
+                            paintCard(wasOn);
+                        }
+                        clearFieldError(tfRho);
+
+                    } catch (IllegalArgumentException ex) {
+                        showError(tfRho, "Fehlerhafte Formel/Dichte:\n" + ex.getMessage());
+                        markFieldError(tfRho);
+                    }
+                });
+
+                // ENTER in d: Dicke direkt am bestehenden Objekt setzen (kein Neuaufbau)
+                tfTh.setOnAction(e -> {
+                    Verbindung v = itemRef.get();
+                    if (v != null) {
+                        double thCm = parseDouble(tfTh, v.getFensterDickeCm());
+                        v.setFensterDickeCm(thCm);
+                    }
+                });
+
+                // Delete
+                btnDel.setOnAction(e -> {
+                    Verbindung v = itemRef.get();
+                    if (v != null) {
+                        getListView().getItems().remove(v);
+                        textMap.remove(v);
+                        useMap.remove(v);    // <— NEU: Status entsorgen
+                    }
+                });
             }
 
             @Override protected void updateItem(Verbindung v, boolean empty) {
                 super.updateItem(v, empty);
-                if (empty || v == null) { setGraphic(null); return; }
+                if (empty || v == null) {
+                    itemRef.set(null);
+                    setGraphic(null);
+                    return;
+                }
+                itemRef.set(v);
 
                 String compShown = textMap.getOrDefault(v, "");
                 tfComp.setText(compShown);
                 tfRho.setText(String.valueOf(v.getDichte()));
                 tfTh.setText(String.valueOf(v.getFensterDickeCm()));
 
-                // Material/Dichte ändern → Verbindung neu bauen & Item ersetzen
-                Runnable rebuild = () -> {
-                    int idx = getIndex();
-                    if (idx < 0) return;
-                    String comp = parseFormula(tfComp, compShown.isBlank() ? "Al" : compShown);
-                    double rho  = parseDouble(tfRho,  v.getDichte());
-                    double thUm = parseDouble(tfTh,   v.getFensterDickeCm());
+                // Use-Status herstellen + Farbe setzen
+                boolean use = useMap.getOrDefault(v, Boolean.TRUE);
+                chkUse.setSelected(use);
+                paintCard(use);
 
-                    Verbindung neu = buildVerbindungFromSpec(comp, rho, thUm);
-                    listData.set(idx, neu);
-                    textMap.remove(v);
-                    textMap.put(neu, comp);
-                };
-                tfComp.setOnAction(e -> rebuild.run());
-                tfRho.setOnAction(e -> rebuild.run());
-
-                // Dicke kann live gesetzt werden (Setter vorhanden)
-                tfTh.setOnAction(e -> {
-                    double thUm = parseDouble(tfTh, v.getFensterDickeCm());
-                    v.setFensterDickeCm(thUm );
-                });
-
-                btnDel.setOnAction(e -> listData.remove(v));
                 setGraphic(card);
             }
         });
 
+
+
         // Spalten-Controls
         Button btnAdd = new Button("Add");
         btnAdd.setOnAction(e -> {
-            Verbindung neu = buildVerbindungFromSpec("Al", 2.70, 50.0);
+            Verbindung neu = buildVerbindungFromSpec("Al", 2.70, 0.0);
             listData.add(neu);
             textMap.put(neu, "Al");
             list.getSelectionModel().select(neu);
@@ -918,11 +1106,11 @@ public class JavaFx extends Application {
         GridPane grid = new GridPane();
 
         ColumnConstraints c1 = new ColumnConstraints();
-        c1.setPercentWidth(50);           // ← links 45%
+        c1.setPercentWidth(50);
         c1.setHgrow(Priority.ALWAYS);
 
         ColumnConstraints c2 = new ColumnConstraints();
-        c2.setPercentWidth(50);           //
+        c2.setPercentWidth(50);
         c2.setHgrow(Priority.ALWAYS);
 
         grid.getColumnConstraints().addAll(c1, c2);
@@ -942,11 +1130,575 @@ public class JavaFx extends Application {
 
 
 
-    private static VBox padded(javafx.scene.Node node) {
-        VBox box = new VBox(node);
-        box.setPadding(new Insets(12));
-        return box;
+
+
+
+    // --- Fehler-Helfer ---
+    private static final PseudoClass PC_ERROR = PseudoClass.getPseudoClass("error");
+
+    /** Zeigt einen Error-Dialog (modal zum Fenster, in dem das Feld steht). */
+    private static void showError(Node owner, String message) {
+        Alert a = new Alert(AlertType.ERROR);
+        a.setTitle("Fehler");
+        a.setHeaderText("Formel kann nicht geparst werden");
+        a.setContentText(message);
+
+        Window w = owner != null && owner.getScene() != null ? owner.getScene().getWindow() : null;
+        if (w != null) a.initOwner(w);
+        a.showAndWait();
     }
+
+    /** Markiert ein Feld visuell als fehlerhaft (per Pseudo-Class). */
+    private static void markFieldError(Node node) {
+        if (node != null) node.pseudoClassStateChanged(PC_ERROR, true);
+    }
+
+    /** Entfernt die Fehler-Markierung. */
+    private static void clearFieldError(Node node) {
+        if (node != null) node.pseudoClassStateChanged(PC_ERROR, false);
+    }
+
+
+    // --- Function filters (GUI) ---
+    private final javafx.collections.ObservableList<PwSegment> tubeFuncSegs = FXCollections.observableArrayList();
+    private final javafx.collections.ObservableList<PwSegment> detFuncSegs  = FXCollections.observableArrayList();
+
+    // Default-Werte (außerhalb aller Segmente)
+    private final DoubleProperty tubeFuncDefault = new SimpleDoubleProperty(1.0); // neutral
+    private final DoubleProperty detFuncDefault  = new SimpleDoubleProperty(1.0); // neutral
+
+
+    private Tab buildFunctionFiltersTab() {
+        // Segments & Defaults initialisieren (wie bisher)
+        if (tubeFuncSegs.isEmpty()) tubeFuncSegs.add(constExprOne());
+        if (detFuncSegs.isEmpty())  detFuncSegs.add(constExprOne());
+
+        // linke/rechte Spalte (deine bestehende buildSegmentColumn-Version weiterverwenden!)
+        VBox tubeCol = buildSegmentColumn(
+                "Röhren: Funktions-Filter",
+                tubeFuncSegs,
+                tubeFuncDefault,
+                () -> applySegmentsToVerbindungen(tubeFilterVerbindungen, tubeFuncSegs, tubeFuncDefault.get())
+        );
+
+        VBox detCol  = buildSegmentColumn(
+                "Detektor: Funktions-Filter",
+                detFuncSegs,
+                detFuncDefault,
+                () -> applySegmentsToVerbindungen(detFilterVerbindungen, detFuncSegs, detFuncDefault.get())
+        );
+
+        // Grid wie gehabt
+        GridPane grid = new GridPane();
+        var c1 = new ColumnConstraints(); c1.setPercentWidth(50); c1.setHgrow(Priority.ALWAYS);
+        var c2 = new ColumnConstraints(); c2.setPercentWidth(50); c2.setHgrow(Priority.ALWAYS);
+        grid.getColumnConstraints().addAll(c1, c2);
+        grid.add(tubeCol, 0, 0);
+        grid.add(detCol,  1, 0);
+        grid.setHgap(12);
+
+        // Untere Tab-Buttons: "Show all"
+        Button btnShowAllTube = new Button("Show all (Tube)");
+        Button btnShowAllDet  = new Button("Show all (Detector)");
+        HBox globalControls = new HBox(10, btnShowAllTube, btnShowAllDet);
+        globalControls.setAlignment(Pos.CENTER);
+        globalControls.setPadding(new Insets(6, 0, 6, 0));
+
+        Region vSpacer = new Region();
+        VBox.setVgrow(vSpacer, Priority.ALWAYS);
+
+
+        VBox content = new VBox(10, grid, globalControls, vSpacer);
+
+        //VBox content = new VBox(grid, globalControls);
+        VBox.setVgrow(grid, Priority.ALWAYS);
+        content.setPadding(new Insets(0));
+
+        // === Full-screen Overlay auf Tab-Ebene =================================
+        StackPane stack = new StackPane(content);
+
+        // Overlay: BorderPane mit Header (Titel + Close) und großem Chart
+        BorderPane overlay = new BorderPane();
+        overlay.setStyle("""
+        -fx-background-color: rgba(0,0,0,0.35);
+    """);
+        overlay.setVisible(false);
+        overlay.setManaged(false);
+
+        // Innenrahmen für Karte
+        BorderPane card = new BorderPane();
+        card.setStyle("""
+        -fx-background-color: -fx-control-inner-background;
+        -fx-background-radius: 12;
+        -fx-border-color: -fx-box-border;
+        -fx-border-radius: 12;
+    """);
+        card.setPadding(new Insets(10));
+        overlay.setCenter(new StackPane(card) {{ setPadding(new Insets(12)); }});
+
+        // Header
+        Label title = new Label("Function Filters – Combined");
+        Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button btnClose = new Button("×");
+        btnClose.setOnAction(e -> { overlay.setVisible(false); overlay.setManaged(false); });
+        HBox header = new HBox(8, title, spacer, btnClose);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.setPadding(new Insets(6, 8, 6, 8));
+        card.setTop(header);
+
+        // Chart
+        NumberAxis xAxis = new NumberAxis(); xAxis.setLabel("Energy [keV]");
+        NumberAxis yAxis = new NumberAxis(); yAxis.setLabel("h(x)");
+        LineChart<Number,Number> chart = new LineChart<>(xAxis, yAxis);
+        chart.setCreateSymbols(false);
+        chart.setAnimated(false);
+        chart.setLegendVisible(false);
+        card.setCenter(chart);
+
+        stack.getChildren().add(overlay);
+
+        // Plot-Helfer: alle Segmente einer Seite + Default über [globalEmin, globalEmax()]
+        Runnable plotTube = () -> {
+            plotCombined(chart, tubeFuncSegs, tubeFuncDefault.get(),
+                    (globalEmin <= 0 ? globalStep() : globalEmin), globalEmax());
+            title.setText(String.format(java.util.Locale.ROOT,
+                    "Tube – default=%.6g   range=[%s, %s]",
+                    tubeFuncDefault.get(), Double.toString((globalEmin <= 0 ? globalStep() : globalEmin)), Double.toString(globalEmax())));
+            overlay.setManaged(true); overlay.setVisible(true);
+        };
+        Runnable plotDet = () -> {
+            plotCombined(chart, detFuncSegs, detFuncDefault.get(),
+                    (globalEmin <= 0 ? globalStep() : globalEmin), globalEmax());
+            title.setText(String.format(java.util.Locale.ROOT,
+                    "Detector – default=%.6g   range=[%s, %s]",
+                    detFuncDefault.get(), Double.toString((globalEmin <= 0 ? globalStep() : globalEmin)), Double.toString(globalEmax())));
+            overlay.setManaged(true); overlay.setVisible(true);
+        };
+
+        btnShowAllTube.setOnAction(e -> plotTube.run());
+        btnShowAllDet.setOnAction(e -> plotDet.run());
+
+        return new Tab("Function Filters", stack);
+    }
+
+    // neutrales Startsegment (expr ≡ 1 auf großem Bereich)
+    private static PwSegment constExprOne() {
+        PwSegment s = new PwSegment();
+        s.enabled = true;
+        s.type = SegmentType.EXPR;
+        s.expr = "1";
+        s.a = 0; s.b = 1e9; s.inclA = true; s.inclB = true;
+        return s;
+    }
+
+    private void plotCombined(LineChart<Number,Number> chart,
+                              java.util.List<PwSegment> segs,
+                              double defaultValue,
+                              double xMin, double xMax) {
+
+        if (!(xMax > xMin)) return;
+
+        // Parser mit Default aufbauen; die Segment-Expr kommen aus deiner PwSegment-Logik
+        MathParser mp = MathParser.withDefault(defaultValue);
+        for (PwSegment s : segs) {
+            if (!s.enabled) continue;
+            String expr = s.toExpressionString(null); // enthält Clamp, falls gesetzt
+            mp = mp.addExprSegment(expr, s.a, s.inclA, s.b, s.inclB);
+        }
+
+        // Chart füllen
+        chart.getData().clear();
+        XYChart.Series<Number,Number> series = new XYChart.Series<>();
+        double eMin = (globalEmin <= 0 ? globalStep() : globalEmin); // dein Konventionswert
+        double eMax = globalEmax();
+        double h    = globalStep();
+        if (h <= 0) throw new IllegalArgumentException("step must be > 0");
+
+// Anzahl Intervalle
+        int N = (int) Math.max(0, Math.floor((eMax - eMin) / h));
+        for (int i = 0; i <= N; i++) {
+            double x = xMin + (xMax - xMin) * i / N;
+            double y = mp.evaluate(x);               // Default außerhalb; Segmente innen
+            if (Double.isFinite(y)) series.getData().add(new XYChart.Data<>(x, y));
+        }
+        chart.getData().add(series);
+    }
+
+
+
+
+    private VBox buildSegmentColumn(String title,
+                                    ObservableList<PwSegment> segs,
+                                    DoubleProperty defaultProp,
+                                    Runnable applyAll) {
+
+        // --- Fester Default-Block (unlöschbar) ---
+        Label lDef = new Label("Default outside segments:");
+        TextField tfDefault = new TextField(Double.toString(defaultProp.get()));
+        tfDefault.setPrefColumnCount(8);
+        Runnable saveDefault = () -> {
+            try {
+                double v = Double.parseDouble(tfDefault.getText().trim().replace(',', '.'));
+                defaultProp.set(v);
+                applyAll.run();
+            } catch (Exception ignore) {
+                tfDefault.setText(Double.toString(defaultProp.get()));
+            }
+        };
+        tfDefault.setOnAction(e -> saveDefault.run());
+        tfDefault.focusedProperty().addListener((o, was, is) -> { if (!is) saveDefault.run(); });
+
+        HBox defaultRow = new HBox(10, lDef, tfDefault, new Label("(used when no segment matches)"));
+        defaultRow.setAlignment(Pos.CENTER_LEFT);
+        defaultRow.setPadding(new Insets(10));
+        defaultRow.setStyle("""
+        -fx-background-color: -fx-control-inner-background;
+        -fx-background-radius: 10;
+        -fx-border-color: -fx-box-border;
+        -fx-border-radius: 10;
+    """);
+
+
+
+        // --- ListView der Segmente (nur EXPR) ---
+        ListView<PwSegment> list = new ListView<>(segs);
+        list.setCellFactory(lv -> new ListCell<>() {
+            private final CheckBox chkUse = new CheckBox("Use");
+            private final TextField tfA = new TextField(), tfB = new TextField();
+            private final Button btnLeft  = new Button("[");  // [ oder (
+            private final Button btnRight = new Button("]");  // ] oder )
+            private final TextField tfExpr = new TextField();
+            private final CheckBox cbClamp = new CheckBox("Clamp");
+            private final TextField tfYmin = new TextField(), tfYmax = new TextField();
+
+            private final Button btnShow = new Button("Show");
+            private final Button btnDel  = new Button("Delete");
+
+            // Mini-Plot-Bereich innerhalb der Karte (ein-/ausblendbar)
+            private final BorderPane plotPane = new BorderPane();
+            private final Label plotTitle = new Label("Plot");
+            private final Button btnClosePlot = new Button("×");
+
+            private LineChart<Number,Number> chart; // wird lazy erstellt
+
+            private final VBox card = new VBox(8);
+            private PwSegment item;
+
+            private void paintCard(boolean enabled) {
+                String base =
+                        "-fx-background-radius: 10; " +
+                                "-fx-border-color: -fx-box-border; " +
+                                "-fx-border-radius: 10;";
+                String bg = enabled
+                        ? "-fx-background-color: rgba(40,160,80,0.18);"  // grün
+                        : "-fx-background-color: rgba(200,60,60,0.18);"; // rot
+                card.setStyle(bg + base);
+            }
+
+
+            {
+                // Prompts & Größen
+                tfA.setPromptText("from"); tfB.setPromptText("to");
+                tfA.setPrefColumnCount(6); tfB.setPrefColumnCount(6);
+
+                tfExpr.setPromptText("example: sin(x)+0.3*x");
+                tfExpr.setPrefColumnCount(24);
+
+                tfYmin.setPromptText("yMin"); tfYmax.setPromptText("yMax");
+                tfYmin.setPrefColumnCount(6); tfYmax.setPrefColumnCount(6);
+
+                // Klammer-Buttons
+                btnLeft.setMinWidth(28);  btnLeft.setFocusTraversable(false);
+                btnRight.setMinWidth(28); btnRight.setFocusTraversable(false);
+                Tooltip.install(btnLeft,  new Tooltip("Left bound: [ inclusive, ( exclusive"));
+                Tooltip.install(btnRight, new Tooltip("Right bound: ] inclusive, ) exclusive"));
+
+                // Zeilen
+                HBox row2    = new HBox(10, chkUse, new Label("Range:"), btnLeft, tfA, new Label(","), tfB, btnRight);
+                HBox rowExpr = new HBox(10, new Label("expr:"), tfExpr);
+                HBox rowClamp= new HBox(10, cbClamp, new Label("y ∈ ["), tfYmin, new Label(","), tfYmax, new Label("]"), btnShow, btnDel);
+
+                row2.setAlignment(Pos.CENTER_LEFT);
+                rowExpr.setAlignment(Pos.CENTER_LEFT);
+                rowClamp.setAlignment(Pos.CENTER_LEFT);
+
+                // Plot-Header mit Close-Button
+                Region spacer = new Region();
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                HBox plotHeader = new HBox(8, plotTitle, spacer, btnClosePlot);
+                plotHeader.setPadding(new Insets(6, 8, 6, 8));
+                plotHeader.setStyle("-fx-background-color: -fx-control-inner-background; -fx-border-color: -fx-box-border;");
+                plotPane.setTop(plotHeader);
+
+                // Plot anfangs verborgen
+                plotPane.setVisible(false);
+                plotPane.setManaged(false);
+
+                // Karte zusammenbauen
+                card.getChildren().addAll(row2, rowExpr, rowClamp, plotPane);
+                card.setPadding(new Insets(10));
+                card.setStyle("""
+            -fx-background-color: -fx-control-inner-background;
+            -fx-background-radius: 10;
+            -fx-border-color: -fx-box-border;
+            -fx-border-radius: 10;
+        """);
+
+                setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+
+                // Helper: Double lesen (oder null)
+                java.util.function.Function<TextField, Double> rd = tf -> {
+                    try {
+                        String s = tf.getText();
+                        if (s == null || s.isBlank()) return null;
+                        return Double.parseDouble(s.trim().replace(',', '.'));
+                    } catch (Exception ex) { return null; }
+                };
+
+                // Änderungen → Model + applyAll
+                Runnable pushToModel = () -> {
+                    if (item == null) return;
+
+                    item.enabled = chkUse.isSelected();
+                    item.type = SegmentType.EXPR; // fix
+                    item.expr = (tfExpr.getText() == null) ? "" : tfExpr.getText().trim();
+
+                    var a = rd.apply(tfA);
+                    var b = rd.apply(tfB);
+                    if (a != null) item.a = a;
+                    if (b != null) item.b = b;
+                    item.inclA = "[".equals(btnLeft.getText());
+                    item.inclB = "]".equals(btnRight.getText());
+
+                    item.clamp = cbClamp.isSelected();
+                    var ymin = rd.apply(tfYmin);
+                    var ymax = rd.apply(tfYmax);
+                    if (ymin != null) item.yMin = ymin;
+                    if (ymax != null) item.yMax = ymax;
+
+                    applyAll.run();
+                };
+
+                // Listener
+                chkUse.selectedProperty().addListener((obs, was, ist) -> {
+                    if (item == null) return;
+                    item.enabled = ist;     // Model-Spiegel
+                    paintCard(ist);         // Farbe sofort umschalten
+                    applyAll.run();         // optional: sofort übernehmen
+                });
+
+
+                btnLeft.setOnAction(e -> { // [ <-> (
+                    btnLeft.setText("[".equals(btnLeft.getText()) ? "(" : "[");
+                    pushToModel.run();
+                });
+                btnRight.setOnAction(e -> { // ] <-> )
+                    btnRight.setText("]".equals(btnRight.getText()) ? ")" : "]");
+                    pushToModel.run();
+                });
+
+                cbClamp.setOnAction(e -> pushToModel.run());
+
+                tfA.setOnAction(e -> pushToModel.run());
+                tfB.setOnAction(e -> pushToModel.run());
+                tfExpr.setOnAction(e -> pushToModel.run());
+                tfExpr.focusedProperty().addListener((o, was, is) -> { if (!is) pushToModel.run(); });
+                tfYmin.setOnAction(e -> pushToModel.run());
+                tfYmax.setOnAction(e -> pushToModel.run());
+
+                tfYmin.focusedProperty().addListener((o, was, is) -> { if (!is) pushToModel.run(); });
+                tfYmax.focusedProperty().addListener((o, was, is) -> { if (!is) pushToModel.run(); });
+
+// (optional auch für tfA/tfB)
+                tfA.focusedProperty().addListener((o, was, is) -> { if (!is) pushToModel.run(); });
+                tfB.focusedProperty().addListener((o, was, is) -> { if (!is) pushToModel.run(); });
+
+                btnDel.setOnAction(e -> {
+                    if (item != null) {
+                        segs.remove(item);
+                        applyAll.run();
+                    }
+                });
+
+                // SHOW: Segment in eingebettetem Chart plotten
+                btnShow.setOnAction(e -> {
+                    if (item == null) return;
+                    ensureChart();
+                    plotCurrentSegment(item);
+                    showPlot(true);
+                });
+
+                // Plot schließen
+                btnClosePlot.setOnAction(e -> showPlot(false));
+            }
+
+            private void ensureChart() {
+                if (chart != null) return;
+                NumberAxis x = new NumberAxis(); x.setLabel("x");
+                NumberAxis y = new NumberAxis(); y.setLabel("f(x)");
+                chart = new LineChart<>(x, y);
+                chart.setCreateSymbols(false);
+                chart.setAnimated(false);
+                chart.setLegendVisible(false);
+                plotPane.setCenter(chart);
+            }
+
+            private void showPlot(boolean on) {
+                plotPane.setVisible(on);
+                plotPane.setManaged(on);
+            }
+
+            private void plotCurrentSegment(PwSegment s) {
+                if (chart == null) return;
+                chart.getData().clear();
+
+                // Ausdruck inkl. optionalem Clamp generieren
+                String expr = s.toExpressionString(null);
+
+                // mXparser-Funktion bauen
+                org.mariuszgromada.math.mxparser.Function f =
+                        new org.mariuszgromada.math.mxparser.Function("f(x) = " + expr);
+                if (!f.checkSyntax()) {
+                    // Syntaxfehler => nichts plotten
+                    return;
+                }
+
+                // Bereich beachten, Exklusivität per kleinem Epsilon
+                double eps = 1e-9 * Math.max(1.0, Math.max(Math.abs(s.a), Math.abs(s.b)));
+                double left  = s.inclA ? s.a : s.a + eps;
+                double right = s.inclB ? s.b : s.b - eps;
+                if (!(right > left)) return;
+
+                XYChart.Series<Number,Number> series = new XYChart.Series<>();
+
+                int N = 600;
+                for (int i = 0; i <= N; i++) {
+                    double x = left + (right - left) * i / N;
+                    double y = f.calculate(x);
+                    if (Double.isFinite(y)) {
+                        series.getData().add(new XYChart.Data<>(x, y));
+                    }
+                }
+                chart.getData().add(series);
+                plotTitle.setText("Plot: " + expr);
+            }
+
+            @Override protected void updateItem(PwSegment s, boolean empty) {
+                super.updateItem(s, empty);
+                if (empty || s == null) {
+                    setGraphic(null);
+                    item = null;
+                    return;
+                }
+                item = s;
+
+                chkUse.setSelected(s.enabled);
+                paintCard(s.enabled);
+
+                tfA.setText(Double.toString(s.a));
+                tfB.setText(Double.toString(s.b));
+                btnLeft.setText(s.inclA ? "[" : "(");
+                btnRight.setText(s.inclB ? "]" : ")");
+
+                tfExpr.setText(s.expr == null ? "" : s.expr);
+
+                cbClamp.setSelected(s.clamp);
+                tfYmin.setText(s.clamp ? Double.toString(s.yMin) : "");
+                tfYmax.setText(s.clamp ? Double.toString(s.yMax) : "");
+
+                // Plot bei Zellenwechsel standardmäßig zu
+                showPlot(false);
+
+                setGraphic(card);
+            }
+        });
+
+
+
+        // Spalten-Controls (Add / Up / Down)
+        Button btnAdd = new Button("Add segment");
+        btnAdd.setOnAction(e -> {
+            PwSegment s = new PwSegment();
+            s.enabled = true;
+            s.type = SegmentType.EXPR;
+            s.expr = "1";
+            s.a = 0; s.b = globalEmax();
+            s.inclA = true; s.inclB = true;
+            segs.add(s);
+            applyAll.run();
+        });
+
+        Button btnUp = new Button("↑");
+        btnUp.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i > 0) {
+                PwSegment s = segs.remove(i);
+                segs.add(i - 1, s);
+                list.getSelectionModel().select(i - 1);
+                applyAll.run();
+            }
+        });
+
+        Button btnDown = new Button("↓");
+        btnDown.setOnAction(e -> {
+            int i = list.getSelectionModel().getSelectedIndex();
+            if (i >= 0 && i < segs.size() - 1) {
+                PwSegment s = segs.remove(i);
+                segs.add(i + 1, s);
+                list.getSelectionModel().select(i + 1);
+                applyAll.run();
+            }
+        });
+
+        HBox controls = new HBox(8, btnAdd, new Separator(), btnUp, btnDown);
+        controls.setPadding(new Insets(6, 0, 6, 0));
+
+        Label header = new Label(title);
+        header.setStyle("-fx-font-weight: bold; -fx-padding: 0 0 6 0;");
+
+        VBox col = new VBox(8, header, defaultRow, list, controls);
+        VBox.setVgrow(list, Priority.ALWAYS);
+        col.setPadding(new Insets(12));
+        return col;
+    }
+
+
+    private void applySegmentsToVerbindungen(java.util.List<Verbindung> verbindungen,
+                                             java.util.List<PwSegment> segs,
+                                             double defaultValue) {
+        for (Verbindung v : verbindungen) {
+            // Default setzen (Wert außerhalb aller Segmente / bei Fehlern)
+            v.clearModulation(defaultValue);
+
+            for (PwSegment s : segs) {
+                if (!s.enabled) continue;
+
+                // Ausdruck aus Segment erzeugen
+                String expr = (s.expr == null || s.expr.isBlank()) ? "1" : s.expr.trim();
+
+                // Optional clamp
+                if (s.clamp) {
+                    expr = String.format(java.util.Locale.US,
+                            "min(max((%s), %.17g), %.17g)", expr, s.yMin, s.yMax);
+                }
+
+                // Intervall hinzufügen
+                v.addModulationSegment(expr, s.a, s.inclA, s.b, s.inclB);
+            }
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
 
     public static void main(String[] args) { launch(args); }
 }

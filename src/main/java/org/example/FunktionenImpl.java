@@ -7,6 +7,9 @@ import java.util.regex.Pattern;
 public class FunktionenImpl implements Funktionen {
     @Override
     public Verbindung parseVerbindung(String input, double Emin, double Emax, double Step, String dateipfad) {
+
+        input = MaterialNamenMapper.mapName(input);
+        if (input == null) throw new IllegalArgumentException("Eingabe ist leer.");
         input = input.trim();
 
         if (input.contains("+")) {

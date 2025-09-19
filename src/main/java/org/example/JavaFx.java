@@ -7,6 +7,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.chart.ScatterChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -25,6 +26,9 @@ import javafx.scene.control.Alert.AlertType;
 import javafx.stage.Window;
 import javafx.css.PseudoClass;
 
+import javafx.scene.shape.Circle;
+import javafx.util.Duration;
+
 import javafx.util.converter.DoubleStringConverter;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.control.cell.CheckBoxTableCell;
@@ -38,7 +42,7 @@ public class JavaFx extends Application {
     private double globalStep() { return parseDouble(energieStep, 0.01); }
     private double globalEmax() { return parseDouble(xRayTubeVoltage, 35.0); }
     private static double globalEmin = 0;
-    private static final String DATA_FILE = "MCMASTER.TXT";
+    private static String DATA_FILE = "MCMASTER.TXT";
 
     // Tube
     private TextField tubeMaterial;
@@ -280,8 +284,7 @@ public class JavaFx extends Application {
                 formWithImage,
                 new Separator(),
                 buildFunctionButtons(),
-                buildAccumulateBox(),   // ← NEU: eigene Zeile
-                buildLogBox()
+                buildAccumulateBox()
         );
         inputBox.setPadding(new Insets(20,10,10,40));    //(top, right, bottom, left)
 
@@ -314,120 +317,305 @@ public class JavaFx extends Application {
         return bp;
     }
 
-    private HBox buildFunctionButtons() {
-        Button btnSin = new Button("Plot sin");
-        btnSin.setOnAction(e -> showPlot("sin"));
+    private enum TubePlot { CONTINUOUS, CHARACTERISTIC, TOTAL, FILTERS }
+    private TubePlot lastTubePlot = null;
 
-        Button btnCos = new Button("Plot cos");
-        btnCos.setOnAction(e -> showPlot("cos"));
 
-        Button btnTan = new Button("Plot tan");
-        btnTan.setOnAction(e -> showPlot("tan"));
+    private VBox buildFunctionButtons() {
+        Button btnTubeCont  = new Button("Plot Tube: Cont");
+        Button btnTubeChar  = new Button("Plot Tube: Char");
+        Button btnTubeTotal = new Button("Plot Tube: Total");
+        Button btnTubeFilt  = new Button("Plot Tube Filters");
 
-        return new HBox(10, btnSin, btnCos, btnTan);
+        // Tooltip für "Plot Tube Filters" – Log hat hier keine Wirkung
+        Tooltip filterTip = new Tooltip(
+                "No log scaling in the plot."
+        );
+        filterTip.setShowDelay(Duration.millis(200));
+        filterTip.setHideDelay(Duration.millis(50));
+        filterTip.setShowDuration(Duration.seconds(10));
+        btnTubeFilt.setTooltip(filterTip); // oder: Tooltip.install(btnTubeFilt, filterTip);
+
+
+        btnTubeCont.setOnAction(e -> plotTubeContinuous());
+        btnTubeChar.setOnAction(e -> plotTubeCharacteristic());
+        btnTubeTotal.setOnAction(e -> plotTubeTotal());
+        btnTubeFilt.setOnAction(e -> plotTubeFilters());
+
+        HBox row1 = new HBox(10, btnTubeCont, btnTubeChar);
+        HBox row2 = new HBox(10, btnTubeTotal, btnTubeFilt);
+
+        row1.setAlignment(Pos.CENTER_LEFT);
+        row2.setAlignment(Pos.CENTER_LEFT);
+
+        VBox box = new VBox(8, row1, row2);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
     }
 
-    private HBox buildAccumulateBox() {
-        chkAccumulate = new CheckBox("Accumulate");
-        chkAccumulate.setSelected(true); // Start: ersetzen
-        return new HBox(16, chkAccumulate);
+
+    // immer erst Edits committen
+    private void commitTubeEdits() {
+        commitAllTextFields(parametersRoot);
+        parametersRoot.requestFocus();
     }
 
-    private HBox buildLogBox() {
-        chkLogX = new CheckBox("log X");
-        chkLogY = new CheckBox("log Y");
-
-        chkLogX.selectedProperty().addListener((o, ov, nv) -> replotAllSeries());
-        chkLogY.selectedProperty().addListener((o, ov, nv) -> replotAllSeries());
-
-        return new HBox(16, chkLogX, chkLogY);
-    }
-
-
-    private void showPlot(String which) {
-        LineChart<Number, Number> chart;
-
+    private LineChart<Number,Number> ensureTubeChart(String title, String yLabel) {
+        LineChart<Number,Number> chart;
         if (chkAccumulate != null && chkAccumulate.isSelected()
                 && plotVisible && plotPane.getCenter() instanceof LineChart<?, ?> lc) {
-            // Akkumulieren: vorhandenen Chart weiter nutzen
             chart = (LineChart<Number, Number>) lc;
         } else {
-            // Ersetzen: neuen Chart bauen (Achsenlabel anhand Log)
-            NumberAxis x = new NumberAxis(); x.setLabel(chkLogX != null && chkLogX.isSelected() ? "log₁₀(x)" : "x");
-            NumberAxis y = new NumberAxis(); y.setLabel(chkLogY != null && chkLogY.isSelected() ? "log₁₀(y)" : "y");
+            NumberAxis x = new NumberAxis(); x.setLabel(chkLogX!=null && chkLogX.isSelected() ? "log₁₀(E) [keV]" : "E [keV]");
+            NumberAxis y = new NumberAxis(); y.setLabel(chkLogY!=null && chkLogY.isSelected() ? "log₁₀("+yLabel+")" : yLabel);
             chart = new LineChart<>(x, y);
             chart.setCreateSymbols(false);
             chart.setAnimated(false);
-            chart.setTitle("Functions");
+            chart.setTitle(title);
 
             if (formWithImage.getChildren().contains(previewImage)) {
                 formWithImage.getChildren().remove(previewImage);
             }
-
-
             plotPane.setCenter(chart);
-
-
             if (!plotVisible) {
                 split = new SplitPane(inputBox, plotPane);
                 split.setDividerPositions(0.25);
                 parametersRoot.setCenter(split);
                 plotVisible = true;
-            } else {
-                chart.getData().clear(); // beim Ersetzen alten Inhalt leeren
+            } else chart.getData().clear();
+        }
+        return chart;
+    }
+
+
+    private void addSeriesFromArrays(
+            LineChart<Number,Number> chart,
+            String name,
+            double[] E, double[] Y
+    ) {
+        XYChart.Series<Number,Number> s = new XYChart.Series<>();
+        s.setName(name);
+        for (int i = 0; i < E.length && i < Y.length; i++) {
+            double x = transformX(E[i]);
+            double y = transformY(Y[i]);
+            if (Double.isFinite(x) && Double.isFinite(y)) {
+                s.getData().add(new XYChart.Data<>(x, y));
+            }
+        }
+        chart.getData().add(s);
+        chart.setCreateSymbols(false); // Linien, keine Marker
+    }
+
+
+    private double currentStep() {
+        return parseDouble(energieStep, 0.05); // oder dein globalStep()
+    }
+
+    private boolean isLogX() { return chkLogX != null && chkLogX.isSelected(); }
+    private boolean isLogY() { return chkLogY != null && chkLogY.isSelected(); }
+
+    private double transformX(double e) {
+        double step = currentStep();
+
+        // Linear: E<step -> 0
+        if (!isLogX()) {
+            return (e < step) ? 0.0 : e;
+        }
+
+        // LogX: nur positive Werte; E<step wird ausgelassen
+        if (e <= 0 || e < step) return Double.NaN; // -> wird in addSeries... übersprungen
+        return Math.log10(e);
+    }
+
+    private double transformY(double v) {
+        // Linear: y<1 -> 0
+        if (!isLogY()) {
+            return (v < 1.0) ? 0.0 : v;
+        }
+
+        // LogY: nur positive Werte; y<1 wird ausgelassen
+        if (v <= 0 || v < 1.0) return Double.NaN; // -> wird in addSeries... übersprungen
+        return Math.log10(v);
+    }
+
+
+    private void addSeriesFromTransitionsAsLine(
+            LineChart<Number,Number> chart,
+            String name,
+            java.util.List<Übergang> transitions
+    ) {
+        java.util.List<Übergang> sorted = new java.util.ArrayList<>(transitions);
+        sorted.sort(java.util.Comparator.comparingDouble(Übergang::getEnergy));
+
+        XYChart.Series<Number,Number> s = new XYChart.Series<>();
+        s.setName(name);
+
+        for (Übergang u : sorted) {
+            double x = transformX(u.getEnergy());
+            double y = transformY(u.getRate());
+            if (Double.isFinite(x) && Double.isFinite(y)) {
+                s.getData().add(new XYChart.Data<>(x, y));
             }
         }
 
-        chart.getData().add(buildSeries(which));
+        chart.getData().add(s);
+        chart.setCreateSymbols(false); // reine Linie
     }
 
-    // ========== Alle vorhandenen Serien mit aktueller Log-Einstellung neu aufbauen ==========
-    private void replotAllSeries() {
-        if (!plotVisible) return;
-        if (!(plotPane.getCenter() instanceof LineChart<?, ?> lc)) return;
 
-        @SuppressWarnings("unchecked")
-        LineChart<Number, Number> chart = (LineChart<Number, Number>) lc;
+    private void addCharacteristicAsSticks(
+            LineChart<Number,Number> chart,
+            java.util.List<Übergang> transitions
+    ) {
+        // nur Linien, keine Marker
+        chart.setCreateSymbols(false);
 
-        // Achsenlabels anpassen
-        if (chart.getXAxis() instanceof NumberAxis x && chart.getYAxis() instanceof NumberAxis y) {
-            x.setLabel(chkLogX.isSelected() ? "log₁₀(x)" : "x");
-            y.setLabel(chkLogY.isSelected() ? "log₁₀(y)" : "y");
-        }
+        // Basishöhe: in LogY ist 0 -> log10(1) = 0; in Linear ist 0 einfach 0
+        final double y0 = isLogY() ? transformY(1.0) : 0.0;
 
-        var names = chart.getData().stream().map(XYChart.Series::getName).toList();
-        chart.getData().clear();
-        for (String name : names) {
-            chart.getData().add(buildSeries(name));
-        }
-    }
+        for (Übergang u : transitions) {
+            double x = transformX(u.getEnergy());
+            double y = transformY(u.getRate());
 
-    // ========== Serie generieren (berücksichtigt log X/Y) ==========
-    private XYChart.Series<Number, Number> buildSeries(String which) {
-        boolean logX = chkLogX.isSelected();
-        boolean logY = chkLogY.isSelected();
-
-        XYChart.Series<Number, Number> s = new XYChart.Series<>();
-        s.setName(which);
-
-        for (int i = 0; i <= 600; i++) {
-            double xv = i / 10.0; // >= 0
-            double yv;
-            switch (which) {
-                case "cos" -> yv = 2.0 + Math.cos(xv);       // > 0
-                case "tan" -> yv = 2.0 + Math.tan(xv) / 3.0; // kann <0 werden; Offset hält meist >0
-                default    -> yv = 2.0 + Math.sin(xv);       // > 0
+            if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(y0)) {
+                continue;
             }
 
-            if (logX && xv <= 0) continue;  // log10(x) undefiniert für x<=0
-            if (logY && yv <= 0) continue;  // log10(y) undefiniert für y<=0
-
-            double px = logX ? Math.log10(xv) : xv;
-            double py = logY ? Math.log10(yv) : yv;
-
-            s.getData().add(new XYChart.Data<>(px, py));
+            XYChart.Series<Number,Number> s = new XYChart.Series<>();
+            s.setName(null); // keine Seriennamenflut in der Legende
+            s.getData().add(new XYChart.Data<>(x, y0)); // Basis
+            s.getData().add(new XYChart.Data<>(x, y));  // Spitze
+            chart.getData().add(s);
         }
-        return s;
+    }
+
+
+
+
+
+
+    private void plotTubeContinuous() {
+        commitTubeEdits();
+        lastTubePlot = TubePlot.CONTINUOUS;
+        RöhreBasis tube = buildTubeFromUI();
+        LineChart<Number,Number> chart = ensureTubeChart("Tube – Continuous", "Counts");
+        addSeriesFromArrays(chart, "Continuous", tube.getEnergieArray(), tube.getContinuousSpectrum());
+    }
+
+    private void plotTubeCharacteristic() {
+        commitTubeEdits();
+        lastTubePlot = TubePlot.CHARACTERISTIC;
+        RöhreBasis tube = buildTubeFromUI();
+        LineChart<Number,Number> chart = ensureTubeChart("Tube – Characteristic", "Counts");
+        addCharacteristicAsSticks(chart, tube.getCharacteristicSpectrum());
+    }
+
+
+    private void plotTubeTotal() {
+        commitTubeEdits();
+        lastTubePlot = TubePlot.TOTAL;
+        RöhreBasis tube = buildTubeFromUI();
+        LineChart<Number,Number> chart = ensureTubeChart("Tube – Total", "Counts");
+        addSeriesFromArrays(chart, "Total", tube.getEnergieArray(), tube.getGesamtspektrum());
+    }
+
+
+
+
+    private void plotTubeFilters() {
+        commitTubeEdits();
+        lastTubePlot = TubePlot.FILTERS;
+        LineChart<Number, Number> chart = ensureTubeChart("Tube Filters – Transmission", "T(E)");
+
+// aktive Tube-Filter einsammeln …
+        java.util.List<Verbindung> active = new java.util.ArrayList<>();
+        for (Verbindung v : tubeFilterVerbindungen) {
+            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) active.add(v);
+        }
+
+// gibt es aktive Function-Filter?
+        boolean haveFunc = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+        boolean haveMat  = !active.isEmpty();
+
+        if (!haveMat && !haveFunc) {
+            Alert a = new Alert(Alert.AlertType.INFORMATION,
+                    "No active tube filter (neither material nor function filter).");
+            a.setHeaderText(null);
+            a.showAndWait();
+            return;
+        }
+
+// Falls keine Material-Filter, aber Function-Filter vorhanden:
+// Dummy-Filter anlegen, Modulation anwenden, und den plotten.
+        if (!haveMat && haveFunc) {
+            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0); // Dicke 0 → neutral
+            active.add(dummy);
+            tubeFormulaText.put(dummy, "Function filter");
+        }
+
+// Sicherheitshalber die aktuellen Function-Filter auch auf die aktiven Verbindungen anwenden
+        if (haveFunc) {
+            applySegmentsToVerbindungen(active, tubeFuncSegs, tubeFuncDefault.get());
+        }
+
+        // Produktkurve + einzelne Filter
+        double[] total = null;
+        for (Verbindung v : active) {
+            double[] E = v.getEnergieArray();
+            double[] T = v.erzeuge_Filter_liste(); // inkl. Modulation
+
+            if (total == null) total = java.util.Arrays.copyOf(T, T.length);
+            else for (int i = 0; i < total.length && i < T.length; i++) total[i] *= T[i];
+
+            XYChart.Series<Number,Number> s = new XYChart.Series<>();
+            s.setName(tubeFormulaText.getOrDefault(v, "Filter"));
+            for (int i = 0; i < E.length && i < T.length; i++) {
+                s.getData().add(new XYChart.Data<>(E[i], T[i]));
+            }
+            chart.getData().add(s);
+        }
+
+        if (total != null) {
+            Verbindung v0 = active.get(0);
+            double[] E = v0.getEnergieArray();
+            XYChart.Series<Number,Number> sTot = new XYChart.Series<>();
+            sTot.setName("Total (Produkt)");
+            for (int i = 0; i < E.length && i < total.length; i++) {
+                sTot.getData().add(new XYChart.Data<>(E[i], total[i]));
+            }
+            chart.getData().add(sTot);
+        }
+    }
+
+
+    private HBox buildAccumulateBox() {
+        chkAccumulate = new CheckBox("Accumulate");
+        chkAccumulate.setSelected(true); // Start: ersetzen
+        chkLogY = new CheckBox("log Y");
+        chkLogY.selectedProperty().addListener((o, ov, nv) -> replotLastTube());
+        return new HBox(16, chkAccumulate,chkLogY);
+    }
+/*
+    private HBox buildLogBox() {
+        chkLogX = new CheckBox("log X");
+        chkLogY = new CheckBox("log Y");
+
+        chkLogX.selectedProperty().addListener((o, ov, nv) -> replotLastTube());
+        chkLogY.selectedProperty().addListener((o, ov, nv) -> replotLastTube());
+
+        //return new HBox(16, chkLogX, chkLogY);
+        return new HBox(16, chkLogY);
+    }*/
+
+    private void replotLastTube() {
+        if (!plotVisible || lastTubePlot == null) return;
+        // kompletten Chart neu aufbauen – gleiche Aktion wie vorher
+        switch (lastTubePlot) {
+            case CONTINUOUS -> plotTubeContinuous();
+            case CHARACTERISTIC -> plotTubeCharacteristic();
+            case TOTAL -> plotTubeTotal();
+            case FILTERS -> plotTubeFilters();
+        }
     }
 
 
@@ -536,16 +724,15 @@ public class JavaFx extends Application {
 
 
         // --- Buttons (no log controls here) ---
-        Button btnSin2 = new Button("Plot sin");
-        Button btnCos2 = new Button("Plot cos");
-        Button btnTan2 = new Button("Plot tan");
+
         Button btnEff = new Button("Plot Effizienz");
+        Button btnFilt = new Button("Plot Filters");
 
         final VBox inputBox2 = new VBox(10,
                 new Label("Detector Input"),
                 formWithImage2,
                 new Separator(),
-                new HBox(10, btnSin2, btnCos2, btnTan2, btnEff),
+                new HBox(10, btnEff, btnFilt),
                 new HBox(16, chkAccumulate2)  // only accumulate, no log boxes
         );
         inputBox2.setPadding(new Insets(20,10,10,40));
@@ -564,44 +751,7 @@ public class JavaFx extends Application {
         // Start: single-column layout (no split yet)
         parametersRoot2.setCenter(inputBox2);
 
-        // --- Plot builder (no log scaling) ---
-        java.util.function.Consumer<String> showPlot2 = which -> {
-            LineChart<Number, Number> chart;
 
-            if (chkAccumulate2.isSelected() && plotVisible2[0] && plotPane2.getCenter() instanceof LineChart<?, ?> lc) {
-                chart = (LineChart<Number, Number>) lc;
-            } else {
-                NumberAxis x = new NumberAxis(); x.setLabel("x");
-                NumberAxis y = new NumberAxis(); y.setLabel("y");
-                chart = new LineChart<>(x, y);
-                chart.setCreateSymbols(false);
-                chart.setAnimated(false);
-                chart.setTitle("Functions");
-
-                // remove image from the left row
-                if (formWithImage2.getChildren().contains(previewImage2)) {
-                    formWithImage2.getChildren().remove(previewImage2);
-                }
-
-                plotPane2.setCenter(chart);
-
-                if (!plotVisible2[0]) {
-                    split2[0] = new SplitPane(inputBox2, plotPane2);
-                    split2[0].setDividerPositions(0.30);
-                    parametersRoot2.setCenter(split2[0]);
-                    plotVisible2[0] = true;
-                } else {
-                    chart.getData().clear();
-                }
-            }
-
-            chart.getData().add(buildSeriesNoLog(which));
-        };
-
-        // Button handlers
-        btnSin2.setOnAction(e -> showPlot2.accept("sin"));
-        btnCos2.setOnAction(e -> showPlot2.accept("cos"));
-        btnTan2.setOnAction(e -> showPlot2.accept("tan"));
 
         btnEff.setOnAction(e -> {
             LineChart<Number, Number> chart;
@@ -644,26 +794,111 @@ public class JavaFx extends Application {
             chart.getData().add(s);
         });
 
+        btnFilt.setOnAction(e -> {
+            var sc = btnFilt.getScene();
+            if (sc != null) {
+                var fo = sc.getFocusOwner();
+                if (fo instanceof TextField tf) {
+                    tf.fireEvent(new javafx.event.ActionEvent()); // löst den setOnAction-Handler aus
+                }
+            }
+
+            LineChart<Number, Number> chart;
+            if (chkAccumulate2.isSelected() && plotVisible2[0] && plotPane2.getCenter() instanceof LineChart<?, ?> lc) {
+                chart = (LineChart<Number, Number>) lc;
+            } else {
+                NumberAxis x = new NumberAxis(); x.setLabel("Energie [keV]");
+                NumberAxis y = new NumberAxis(); y.setLabel("Transmission T(E)");
+                chart = new LineChart<>(x, y);
+                chart.setCreateSymbols(false);
+                chart.setAnimated(false);
+                chart.setTitle("Detektor-Filter: Transmission");
+
+                if (formWithImage2.getChildren().contains(previewImage2)) {
+                    formWithImage2.getChildren().remove(previewImage2);
+                }
+                plotPane2.setCenter(chart);
+
+                if (!plotVisible2[0]) {
+                    split2[0] = new SplitPane(inputBox2, plotPane2);
+                    split2[0].setDividerPositions(0.30);
+                    parametersRoot2.setCenter(split2[0]);
+                    plotVisible2[0] = true;
+                } else {
+                    chart.getData().clear();
+                }
+            }
+
+// Aktive Detektor-Filter sammeln …
+            java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+            for (Verbindung v : detFilterVerbindungen) {
+                if (detFilterUse.getOrDefault(v, Boolean.TRUE)) {
+                    activeDetFilters.add(v);
+                }
+            }
+
+// Function-Filter vorhanden?
+            boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+            boolean haveMatDet  = !activeDetFilters.isEmpty();
+
+            if (!haveMatDet && !haveFuncDet) {
+                Alert a = new Alert(Alert.AlertType.INFORMATION,
+                        "No active detector filter (neither material nor function filter).");
+                a.setHeaderText(null);
+                a.showAndWait();
+                return;
+            }
+
+// Keine Material-Filter, aber Function-Filter → Dummy anlegen
+            if (!haveMatDet && haveFuncDet) {
+                Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
+                activeDetFilters.add(dummy);
+                detFormulaText.put(dummy, "Function filter");
+            }
+
+// Function-Filter anwenden (setzt Modulation auf den Verbindungen)
+            if (haveFuncDet) {
+                applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+            }
+
+
+            // Plotten: jede Verbindung als Serie; zusätzlich Produktkurve
+            double[] total = null;
+            for (Verbindung v : activeDetFilters) {
+                double[] E = v.getEnergieArray();
+                double[] T = v.erzeuge_Filter_liste(); // enthält Modulation
+
+                if (total == null) {
+                    total = java.util.Arrays.copyOf(T, T.length);
+                } else {
+                    for (int i = 0; i < total.length && i < T.length; i++) total[i] *= T[i];
+                }
+
+                XYChart.Series<Number, Number> s = new XYChart.Series<>();
+
+                String label = detFormulaText.getOrDefault(v, "Filter");
+                s.setName(label);
+                for (int i = 0; i < E.length && i < T.length; i++) {
+                    s.getData().add(new XYChart.Data<>(E[i], T[i]));
+                }
+                chart.getData().add(s);
+            }
+
+            // Gesamt-Transmission (Produkt)
+            if (total != null) {
+                Verbindung v0 = activeDetFilters.get(0);
+                double[] E = v0.getEnergieArray();
+                XYChart.Series<Number, Number> sTot = new XYChart.Series<>();
+                sTot.setName("Total (Produkt)");
+                for (int i = 0; i < E.length && i < total.length; i++) {
+                    sTot.getData().add(new XYChart.Data<>(E[i], total[i]));
+                }
+                chart.getData().add(sTot);
+            }
+        });
 
         return new Tab("Detector", parametersRoot2);
     }
-
-    private XYChart.Series<Number, Number> buildSeriesNoLog(String which) {
-        XYChart.Series<Number, Number> s = new XYChart.Series<>();
-        s.setName(which);
-
-        for (int i = 0; i <= 600; i++) {
-            double x = i / 10.0;
-            double y = switch (which) {
-                case "cos" -> Math.cos(x);
-                case "tan" -> Math.tan(x) / 3.0; // scaled to avoid blow-up
-                default    -> Math.sin(x);
-            };
-            s.getData().add(new XYChart.Data<>(x, y));
-        }
-        return s;
-    }
-
 
 
 
@@ -696,7 +931,7 @@ public class JavaFx extends Application {
 
 
     private Detektor buildDetectorFromUI() {
-        // Detector-Tab Felder:
+        // Detector-Felder
         String fenstermaterial = parseOrDefault(windowMaterialDet,"Be" );
         double fensterdicke_um = parseOrDefault(thicknessWindowDet, 7.62);   // µm
         String kontaktmaterial = parseOrDefault(contactlayerDet,"Au" );
@@ -705,16 +940,36 @@ public class JavaFx extends Application {
         double totschicht_um = parseOrDefault(inactiveLayer, 0.05);           // µm
         double activeLayer_mm = parseOrDefault(activeLayer, 3);               // mm
 
-        // Tube-Tab Felder für Energieskala:
-        double emax_kV = parseOrDefault(xRayTubeVoltage, 35);                 // kV ~ keV hier
+        // Tube-Tab für Energiegitter
+        double emax_kV = parseOrDefault(xRayTubeVoltage, 35);
         double step_keV = parseOrDefault(energieStep, 0.05);
-        double emin_keV = 0; // deine Detektor-Klasse setzt 0 -> step selbst
+        double emin_keV = 0; // 0 → deine Klassen setzen intern auf step
 
-        // Defaults, weil keine UI-Felder:
+        // Aktive Detektor-Filter einsammeln
+        java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+        for (Verbindung v : detFilterVerbindungen) {
+            if (detFilterUse.getOrDefault(v, Boolean.TRUE)) {
+                activeDetFilters.add(v);
+            }
+        }
+
+        // Wenn keine aktiven Filter, Dummy (Transmission 1) hinzufügen,
+        // damit Funktionsfilter trotzdem angewendet werden können.
+        if (activeDetFilters.isEmpty()) {
+            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0); // Dicke 0 → neutral
+            activeDetFilters.add(dummy);
+            detFormulaText.put(dummy, "Al");
+            detFilterUse.put(dummy, true);
+        }
+
+        // Funktionsfilter (Segmente) auf diese Verbindungen anwenden
+        applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+
+
+        // Detektor erzeugen
         double phi_deg = 0.0;
         double bedeckungsfaktor = 1.0;
-        String datei = "MCMASTER.TXT";
-        java.util.List<Verbindung> filter = new java.util.ArrayList<>();
+        String datei = DATA_FILE;
 
         return new Detektor(
                 fenstermaterial,
@@ -730,8 +985,104 @@ public class JavaFx extends Application {
                 emin_keV,
                 emax_kV,
                 step_keV,
-                filter
+                activeDetFilters
         );
+    }
+
+
+    // in JavaFx:
+    private RöhreBasis buildTubeFromUI() {
+        // **UI lesen**
+        String anodenMat     = parseOrDefault(tubeMaterial, "Rh");
+        double alphaDeg      = parseOrDefault(electronIncidentAngle, 20);  // α
+        double betaDeg       = parseOrDefault(electronTakeoffAngle, 70);   // β
+        double fensterWinkel = 0;                                          // falls kein Feld → 0°
+        String fenstMat      = parseOrDefault(windowMaterial, "Be");
+        double fenstDicke_um = parseOrDefault(windowMaterialThickness, 125);
+        double i_mA          = parseOrDefault(tubeCurrent, 1.0);
+        double emax_kV       = parseOrDefault(xRayTubeVoltage, 35);
+        double sigmaConstVal = parseOrDefault(sigmaConst, 1.0314);
+        double step_keV      = parseOrDefault(energieStep, 0.01);
+        double t_meas        = parseOrDefault(measurementTime, 30);
+        double c2c           = parseOrDefault(charZuCont, 1.0);
+        double c2cL          = parseOrDefault(charZuContL, 1.0);
+
+        // **aktive Tube-Filter einsammeln**
+        java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
+        for (Verbindung v : tubeFilterVerbindungen) {
+            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+        }
+        if (activeTubeFilters.isEmpty()) {
+            // neutraler Dummy, damit Funktionsfilter angewendet werden können
+            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
+            tubeFormulaText.put(dummy, "Al");
+            tubeFilterUse.put(dummy, true);
+            activeTubeFilters.add(dummy);
+        }
+
+        // **Funktions-Filter auf Tube-Filter anwenden**
+        applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+
+// Mapping ComboBox -> interne Schlüssel
+        String modelKey = switch (tubeModel.getValue()) {
+            case "Love & Scott"   -> "lovescott";
+            case "Wiederschwinger"-> "widerschwinger";
+            default               -> "widerschwinger";
+        };
+
+        RöhreBasis tube;
+        switch (modelKey) {
+            case "lovescott":
+                if (sigmaConstVal==1.0314){sigmaConstVal=1.109;}
+                tube = new LoveScottRöhre(
+                        /* einfallswinkelalpha */   alphaDeg,
+                        /* einfallswinkelbeta  */   betaDeg,
+                        /* fensterwinkel       */   fensterWinkel,
+                        /* charzucont          */   c2c,
+                        /* charzucontL         */   c2cL,
+                        /* fensterdickeRöhre   */   fenstDicke_um,
+                        /* raumwinkel          */   1.0,
+                        /* röhrenstrom [A]     */   i_mA,
+                        /* emin [keV]          */   0.0,
+                        /* emax [keV]          */   emax_kV,
+                        /* sigma               */   sigmaConstVal,
+                        /* step [keV]          */   step_keV,
+                        /* messzeit [s]        */   t_meas,
+                        /* röhrenmaterial      */   anodenMat,
+                        /* fenstermaterial     */   fenstMat,
+                        /* dateipfad           */   DATA_FILE,
+                        /* filter_röhre        */   activeTubeFilters
+                );
+                break;
+
+            case "widerschwinger":
+            default:
+                tube = new WiderschwingerRöhre(
+                        /* einfallswinkelalpha */   alphaDeg,
+                        /* einfallswinkelbeta  */   betaDeg,
+                        /* fensterwinkel       */   fensterWinkel,
+                        /* charzucont          */   c2c,
+                        /* charzucontL         */   c2cL,
+                        /* fensterdickeRöhre   */   fenstDicke_um,
+                        /* raumwinkel          */   1.0,
+                        /* röhrenstrom [A]     */   i_mA,
+                        /* emin [keV]          */   0.0,
+                        /* emax [keV]          */   emax_kV,
+                        /* sigma               */   sigmaConstVal,
+                        /* step [keV]          */   step_keV,
+                        /* messzeit [s]        */   t_meas,
+                        /* röhrenmaterial      */   anodenMat,
+                        /* fenstermaterial     */   fenstMat,
+                        /* dateipfad           */   DATA_FILE,
+                        /* filter_röhre        */   activeTubeFilters
+                );
+                break;
+        }
+
+
+        // Daten vorbereiten (füllt continuous / characteristic / gesamt)
+        tube.prepareData();
+        return tube;
     }
 
 
@@ -778,13 +1129,15 @@ public class JavaFx extends Application {
     private final java.util.Map<Verbindung, String> tubeFormulaText = new java.util.IdentityHashMap<>();
     private final java.util.Map<Verbindung, String> detFormulaText  = new java.util.IdentityHashMap<>();
 
+    private final java.util.Map<Verbindung, Boolean> tubeFilterUse = new java.util.IdentityHashMap<>();
+    private final java.util.Map<Verbindung, Boolean> detFilterUse  = new java.util.IdentityHashMap<>();
+
 
 
 
     private VBox buildFilterColumn(String title,
                                    ObservableList<Verbindung> listData,
-                                   java.util.Map<Verbindung,String> textMap) {
-        final java.util.Map<Verbindung, Boolean> useMap = new java.util.IdentityHashMap<>();
+                                   java.util.Map<Verbindung,String> textMap,java.util.Map<Verbindung,Boolean> useMap) {
 
         // Startwerte (nur beim ersten Aufruf)
         if (listData.isEmpty()) {
@@ -793,14 +1146,14 @@ public class JavaFx extends Application {
             listData.addAll(v1, v2);
             textMap.put(v1, "Al");
             textMap.put(v2, "Rh");
-            useMap.put(v1, true);   // <— NEU
+            useMap.put(v1, true);
             useMap.put(v2, true);
         }
 
         ListView<Verbindung> list = new ListView<>(listData);
         list.setCellFactory(lv -> new ListCell<>() {
             // --- UI pro Karte ---
-            private final CheckBox chkUse = new CheckBox("Use");   // <— NEU
+            private final CheckBox chkUse = new CheckBox("Use");
             private final TextField tfComp = new TextField();
             private final TextField tfRho  = new TextField();
             private final TextField tfTh   = new TextField();
@@ -1008,6 +1361,12 @@ public class JavaFx extends Application {
                     }
                 });
 
+                tfRho.focusedProperty().addListener((o, was, ist) -> {
+                    if (!ist) tfRho.fireEvent(new javafx.event.ActionEvent());
+                });
+
+
+
                 // ENTER in d: Dicke direkt am bestehenden Objekt setzen (kein Neuaufbau)
                 tfTh.setOnAction(e -> {
                     Verbindung v = itemRef.get();
@@ -1015,6 +1374,11 @@ public class JavaFx extends Application {
                         double thCm = parseDouble(tfTh, v.getFensterDickeCm());
                         v.setFensterDickeCm(thCm);
                     }
+                });
+
+                // nach tfTh.setOnAction(...)
+                tfTh.focusedProperty().addListener((o, was, ist) -> {
+                    if (!ist) tfTh.fireEvent(new javafx.event.ActionEvent());
                 });
 
                 // Delete
@@ -1099,9 +1463,9 @@ public class JavaFx extends Application {
 
     private Tab buildFiltersTab() {
         // Linke Spalte: Röhrenfilter
-        VBox tubeCol = buildFilterColumn("Röhrenfilter", tubeFilterVerbindungen, tubeFormulaText);
-        // Rechte Spalte: Detektorfilter
-        VBox detCol  = buildFilterColumn("Detektorfilter", detFilterVerbindungen, detFormulaText);
+        VBox tubeCol = buildFilterColumn("Röhrenfilter", tubeFilterVerbindungen, tubeFormulaText, tubeFilterUse);
+        VBox detCol  = buildFilterColumn("Detektorfilter", detFilterVerbindungen, detFormulaText, detFilterUse);
+
 
         GridPane grid = new GridPane();
 
@@ -1125,9 +1489,6 @@ public class JavaFx extends Application {
 
         return new Tab("Filters", root);
     }
-
-
-
 
 
 
@@ -1200,7 +1561,33 @@ public class JavaFx extends Application {
         // Untere Tab-Buttons: "Show all"
         Button btnShowAllTube = new Button("Show all (Tube)");
         Button btnShowAllDet  = new Button("Show all (Detector)");
-        HBox globalControls = new HBox(10, btnShowAllTube, btnShowAllDet);
+        Button btnInfo = new Button("i");
+        double r = 14;
+        btnInfo.setShape(new Circle(r));
+        btnInfo.setMinSize(2*r, 2*r);
+        btnInfo.setPrefSize(2*r, 2*r);
+        btnInfo.setMaxSize(2*r, 2*r);
+        btnInfo.setStyle("-fx-background-color:#1976d2; -fx-text-fill:white; -fx-font-weight:bold;");
+
+        Tooltip infoTip = new Tooltip("""
+        Info for piecewise function filters
+        """);
+        infoTip.setShowDelay(Duration.millis(200));     // 0.2 s
+// optional:
+        infoTip.setHideDelay(Duration.millis(50));      // schneller weg
+        infoTip.setShowDuration(Duration.seconds(10));  // wie lange sichtbar
+
+        Tooltip.install(btnInfo, infoTip);
+
+
+
+        btnInfo.setOnAction(e -> {
+            Window w = btnInfo.getScene() != null ? btnInfo.getScene().getWindow() : null;
+            showFunctionFiltersInfo(w);
+        });
+
+
+        HBox globalControls = new HBox(10, btnShowAllTube, btnShowAllDet, btnInfo);
         globalControls.setAlignment(Pos.CENTER);
         globalControls.setPadding(new Insets(6, 0, 6, 0));
 
@@ -1281,13 +1668,68 @@ public class JavaFx extends Application {
         return new Tab("Function Filters", stack);
     }
 
+    private void showFunctionFiltersInfo(Window owner) {
+        String info = """
+        What can I do here?
+        
+        Important
+        • The function value is always treated as non-negative: |f(x)| is used.
+        
+        Manage segments
+        • "Add segment" creates a new interval.
+        • "↑/↓" changes priority. Segments higher in the list take precedence on overlaps.
+          Example: S1 on [2, 4] and S2 on [3, 5] → f(x) uses S1 on [2, 4] and S2 on (4, 5].
+        • "Use" enables/disables a segment (card turns green/red).
+        
+        Range & bounds
+        • Range: a .. b, with [ ] inclusive and ( ) exclusive.
+        • The bracket buttons next to a/b toggle inclusive/exclusive.
+        
+        Expression (expr)
+        • mXparser syntax, e.g.: 1, 0.75, sin(x), cos(x)+0.2*x, exp(-x/10).
+        • Trigonometric functions use radians.
+        • Syntax errors prevent the segment from being applied.
+        
+        Clamp
+        • "Clamp" limits the segment output to [yMin, yMax] to cap spikes/outliers.
+        
+        Default outside segments
+        • Applied wherever no segment matches or a calculation yields NaN/∞.
+        • For a neutral filter, use 1.0.
+        • Monoenergetic example: create a narrow segment, e.g. [20.2, 20.5] with expr = 1,
+          and set the default to 0.
+        
+        Display
+        • "Show" on a segment card plots that segment over its interval.
+        • "Show all (Tube)/(Detector)" plots the combined active segments across the global energy range.
+        
+        Global energy range
+        • Uses Emin = 0, Emax, and the step size from the Tube tab.
+        
+        """;
+
+
+        TextArea ta = new TextArea(info);
+        ta.setEditable(false);
+        ta.setWrapText(true);
+        ta.setPrefSize(720, 500);
+
+        Alert a = new Alert(Alert.AlertType.INFORMATION);
+        a.setTitle("Function Filters – Help");
+        a.setHeaderText("Info Function Filters");
+        a.getDialogPane().setContent(ta);
+        if (owner != null) a.initOwner(owner);
+        a.showAndWait();
+    }
+
+
     // neutrales Startsegment (expr ≡ 1 auf großem Bereich)
-    private static PwSegment constExprOne() {
+    private PwSegment constExprOne() {
         PwSegment s = new PwSegment();
         s.enabled = true;
         s.type = SegmentType.EXPR;
         s.expr = "1";
-        s.a = 0; s.b = 1e9; s.inclA = true; s.inclB = true;
+        s.a = 0; s.b = globalEmax(); s.inclA = true; s.inclB = true;
         return s;
     }
 
@@ -1663,38 +2105,64 @@ public class JavaFx extends Application {
     }
 
 
-    private void applySegmentsToVerbindungen(java.util.List<Verbindung> verbindungen,
-                                             java.util.List<PwSegment> segs,
-                                             double defaultValue) {
-        for (Verbindung v : verbindungen) {
-            // Default setzen (Wert außerhalb aller Segmente / bei Fehlern)
-            v.clearModulation(defaultValue);
+    private void applySegmentsToVerbindungen(
+            java.util.List<Verbindung> verbindungen,
+            java.util.List<PwSegment> segs,
+            double defaultValue
+    ) {
+        // Default wie im MathParser-Flow: immer nicht-negativ
+        double def = Math.abs(defaultValue);
 
+        // Linke Energieboundary wie im Plot-All (Emin=0 → step als Start)
+        double eminLeft = (globalEmin <= 0 ? globalStep() : globalEmin);
+        double emaxRight = globalEmax();
+
+        for (Verbindung v : verbindungen) {
+            // setzt den Default außerhalb aller Segmente
+            v.clearModulation(def);
+
+            // WICHTIG: gleiche Reihenfolge wie im Plot-All
+            // => erstes passendes Segment gewinnt.
+            // Falls deine Verbindung intern "zuletzt gewinnt" implementiert,
+            // DANN hier segs rückwärts iterieren.
             for (PwSegment s : segs) {
                 if (!s.enabled) continue;
 
-                // Ausdruck aus Segment erzeugen
-                String expr = (s.expr == null || s.expr.isBlank()) ? "1" : s.expr.trim();
+                // 1) exakten Ausdruck wie im Plot-All generieren (inkl. Clamp)
+                String expr = s.toExpressionString(null);
 
-                // Optional clamp
-                if (s.clamp) {
-                    expr = String.format(java.util.Locale.US,
-                            "min(max((%s), %.17g), %.17g)", expr, s.yMin, s.yMax);
+                // 2) wie MathParser.evaluate(): immer |f(x)|
+                expr = "abs((" + expr + "))";
+
+                // 3) Bereichsgrenzen an die Plot-Konvention anpassen
+                double a = s.a;
+                double b = s.b;
+                boolean inclA = s.inclA;
+                boolean inclB = s.inclB;
+
+                // wenn a <= 0, benutze dieselbe Startgrenze wie Plot-All
+                if (!(a > 0)) {
+                    a = eminLeft;
+                    inclA = true; // entspricht dem Plot-All-Sampling ab der linken Kante
+                }
+                // rechts sicherstellen, dass wir nicht über emax hinausgehen
+                if (b > emaxRight) {
+                    b = emaxRight;
+                    // inclB so lassen; Verbindung kümmert sich um Exklusivität
                 }
 
-                // Intervall hinzufügen
-                v.addModulationSegment(expr, s.a, s.inclA, s.b, s.inclB);
+                // 4) Segment auf die Verbindung legen
+                v.addModulationSegment(expr, a, inclA, b, inclB);
             }
         }
     }
 
 
-
-
-
-
-
-
+    private void commitAllTextFields(Node root) {
+        root.lookupAll(".text-field").forEach(n -> {
+            if (n instanceof TextField tf) tf.fireEvent(new javafx.event.ActionEvent());
+        });
+    }
 
 
 

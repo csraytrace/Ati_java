@@ -126,10 +126,6 @@ public final class MathParser {
 
 
 
-
-
-
-
     /** Wert h(x) – stückweise, inkl. Fehlerschutz; außerhalb -> defaultValue */
     public double evaluate(double x) {
         for (Segment s : segs) {

@@ -95,7 +95,7 @@ public class Detektor {
         // Math.toRadians(phiGrad) wandelt Grad in Bogenmaß um
         return Math.exp(-massenschwKoeff * dichte * dicke / Math.cos(Math.toRadians(phiGrad)));
     }
-
+/*
     public double[] filterErzeugen() {
         double[] result;
         double[] energies = müKontaktmaterial.getEnergieArray();
@@ -119,6 +119,27 @@ public class Detektor {
         }
         return result;
     }
+*/
+
+    public double[] filterErzeugen() {
+        double[] energies = müKontaktmaterial.getEnergieArray();
+        double[] result = new double[energies.length];
+        Arrays.fill(result, 1.0);
+
+        if (Filter != null && !Filter.isEmpty()) {
+            for (int i = 0; i < energies.length; i++) {
+                double e = energies[i];
+                double prod = 1.0;
+                for (Verbindung f : Filter) {
+                    prod *= f.erzeuge_Filter(e); // ← nimmt das richtige f(E) egal welches Raster die Verbindung intern hat
+                }
+                result[i] = prod;
+            }
+        }
+        return result;
+    }
+
+
 
     public double filterErzeugen(double energie) {
         if (Filter == null || Filter.isEmpty()) {

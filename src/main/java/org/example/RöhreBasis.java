@@ -384,6 +384,9 @@ public abstract class RöhreBasis {
     }
 
     public double [] getGesamtspektrum(){return this.gesamtSpektrum;}
+    public double[] getEnergieArray()            { return roehrenMaterial.getEnergieArray(); }
+    public double[] getContinuousSpectrum()      { return continuousSpectrum; }
+    public java.util.List<Übergang> getCharacteristicSpectrum() { return characteristicSpectrum; }
 
 
 }

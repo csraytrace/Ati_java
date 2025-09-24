@@ -8,10 +8,10 @@ public class TestBobyqa {
     public static void main(String[] args) {
 
         double Emin=0.05;
-        double Emax=45;
+        double Emax=40;
         double step=0.05;
         List<String[]> paraVar = Arrays.asList(
-                //new String[]{"sigma"},
+                new String[]{"sigma"},
                 new String[]{"Einfallswinkelalpha"},
                 new String[]{"activeLayer"},
                 new String[]{"Totschicht"},
@@ -22,6 +22,7 @@ public class TestBobyqa {
         );
 
         List<double[]> grenzen = Arrays.asList(
+                new double[]{0.8, 1.0314},
                 new double[]{15,25},
                 new double[]{2, 4},
                 new double[]{0.0, 0.2},
@@ -76,22 +77,12 @@ public class TestBobyqa {
         }
 
 
-        double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
-        String para="Emin=0.05, Emax=45,step=0.05";
+        //double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
+        double[] startwerte = {0.8, 15, 2, 0.1, 0.1, 1.1, 25};
+        String para="Emin=0.05, Emax=40,step=0.05";
         //"sigma=0.8, raumwinkel=0.9, Einfallswinkelalpha=8, Einfallswinkelbeta=70"
 
 
-        List<Verbindung> filter = new ArrayList<>();
-        // Beispiel: Verbindung mit Dichte 0.1 und Symbol "Be"
-        Verbindung beFilter = new Verbindung(
-                new String[]{"Be"},
-                new double[]{1.0},
-                Emin, Emax, step,    // Emin, Emax, step
-                "MCMASTER.TXT",
-                0.1             // Dichte
-        );
-        beFilter.setFensterDickeCm(0.2);
-        filter.add(beFilter);
 
 
         Kali1 kali = new Kali1(null,null);
@@ -105,7 +96,7 @@ public class TestBobyqa {
                 probeliste,
                 true,
                 para,
-                startwerte // Startwerte
+                null // Startwerte
         );
 
         // Ausgabe

@@ -1,6 +1,8 @@
 package org.example;
 
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import javafx.application.Application;
+import javafx.beans.binding.Bindings;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -9,9 +11,12 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.ScatterChart;
 import javafx.scene.control.*;
+import javafx.scene.control.cell.ComboBoxTableCell;
+import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 
@@ -29,9 +34,16 @@ import javafx.css.PseudoClass;
 import javafx.scene.shape.Circle;
 import javafx.util.Duration;
 
-import javafx.util.converter.DoubleStringConverter;
-import javafx.scene.control.cell.TextFieldTableCell;
-import javafx.scene.control.cell.CheckBoxTableCell;
+// JSON (Jackson)
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import javafx.util.StringConverter;
+
+// Preferences
+import java.util.Set;
+import java.util.prefs.Preferences;
+
 
 import java.util.Objects;
 
@@ -109,10 +121,12 @@ public class JavaFx extends Application {
 
         // ----- Tabs -----
         TabPane tabs = new TabPane(
+                buildPropertiesTab(),
                 buildParameterTab(),
                 buildDetectorTab(),
                 buildFiltersTab(),
-                buildFunctionFiltersTab()
+                buildFunctionFiltersTab(),
+                buildConcentrationsTab()
         );
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
@@ -956,10 +970,10 @@ public class JavaFx extends Application {
         // Wenn keine aktiven Filter, Dummy (Transmission 1) hinzufügen,
         // damit Funktionsfilter trotzdem angewendet werden können.
         if (activeDetFilters.isEmpty()) {
-            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0); // Dicke 0 → neutral
-            activeDetFilters.add(dummy);
-            detFormulaText.put(dummy, "Al");
-            detFilterUse.put(dummy, true);
+            //Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0); // Dicke 0 → neutral
+            //activeDetFilters.add(dummy);
+            //detFormulaText.put(dummy, "Al");
+            //detFilterUse.put(dummy, true);
         }
 
         // Funktionsfilter (Segmente) auf diese Verbindungen anwenden
@@ -1141,13 +1155,13 @@ public class JavaFx extends Application {
 
         // Startwerte (nur beim ersten Aufruf)
         if (listData.isEmpty()) {
-            Verbindung v1 = buildVerbindungFromSpec("Al", 2.70, 50);
-            Verbindung v2 = buildVerbindungFromSpec("Rh", 12.41, 25);
-            listData.addAll(v1, v2);
-            textMap.put(v1, "Al");
-            textMap.put(v2, "Rh");
-            useMap.put(v1, true);
-            useMap.put(v2, true);
+            //Verbindung v1 = buildVerbindungFromSpec("Al", 2.70, 50);
+            //Verbindung v2 = buildVerbindungFromSpec("Rh", 12.41, 25);
+            //listData.addAll(v1, v2);
+            //textMap.put(v1, "Al");
+            //textMap.put(v2, "Rh");
+            //useMap.put(v1, true);
+            //useMap.put(v2, true);
         }
 
         ListView<Verbindung> list = new ListView<>(listData);
@@ -1531,8 +1545,8 @@ public class JavaFx extends Application {
 
     private Tab buildFunctionFiltersTab() {
         // Segments & Defaults initialisieren (wie bisher)
-        if (tubeFuncSegs.isEmpty()) tubeFuncSegs.add(constExprOne());
-        if (detFuncSegs.isEmpty())  detFuncSegs.add(constExprOne());
+        //if (tubeFuncSegs.isEmpty()) tubeFuncSegs.add(constExprOne());
+        //if (detFuncSegs.isEmpty())  detFuncSegs.add(constExprOne());
 
         // linke/rechte Spalte (deine bestehende buildSegmentColumn-Version weiterverwenden!)
         VBox tubeCol = buildSegmentColumn(
@@ -2163,6 +2177,1207 @@ public class JavaFx extends Application {
             if (n instanceof TextField tf) tf.fireEvent(new javafx.event.ActionEvent());
         });
     }
+
+
+
+    // ====== Properties/Profile: Felder oben in der Klasse ======
+    private ComboBox<String> cmbDataSource;
+    private TextField txtDataFile;
+    private Button btnBrowseData;
+    private CheckBox chkAutoLoadLast;
+
+    private ListView<String> lstProfiles;
+    private TextField txtProfileName;
+    private Button btnSaveProfile, btnLoadProfile, btnDeleteProfile;
+
+    // Persistence
+    private final Preferences prefs = Preferences.userNodeForPackage(JavaFx.class);
+
+
+    private final ObjectMapper mapper = new ObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            .enable(SerializationFeature.INDENT_OUTPUT)
+            .setVisibility(PropertyAccessor.FIELD, com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility.ANY);
+
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private static class AppSettings {
+        // Datenquelle
+        String  dataSource;   // "McMaster" | "Custom…"
+        String  dataFile;
+
+        // Tube  (ALLE numeric Felder: Double -> nullable!)
+        String  tubeMaterial;
+        Double  electronIncidentAngle, electronTakeoffAngle;
+        Double  charZuCont, charZuContL;
+        String  windowMaterial;
+        Double  windowMaterialThickness;
+        Double  tubeCurrent, xRayTubeVoltage;
+        Double  sigmaConst, energieStep, measurementTime;
+        String  tubeModel; // "Wiederschwinger" | "Love & Scott"
+
+        // Detector
+        String  windowMaterialDet, contactlayerDet, detectorMaterial;
+        Double  thicknessWindowDet, contactlayerThicknessDet, inactiveLayer, activeLayer;
+
+        public java.util.List<MatFilterDTO> tubeMatFilters;
+        public java.util.List<MatFilterDTO> detMatFilters;
+
+
+        public java.util.List<SegmentDTO> tubeFuncSegs;
+        public java.util.List<SegmentDTO> detFuncSegs;
+
+        // Function-Filter Defaults
+        Double  tubeFuncDefault, detFuncDefault;
+
+        // Flags
+        Boolean autoLoadLast;
+
+
+        static AppSettings fromUI(JavaFx ui) {
+            AppSettings s = new AppSettings();
+
+            // Datenquelle
+            s.dataSource = emptyToNull(ui.cmbDataSource.getValue());
+            s.dataFile   = emptyToNull(ui.txtDataFile.getText());
+
+            // Tube
+            s.tubeMaterial            = emptyToNull(ui.tubeMaterial.getText());
+            s.electronIncidentAngle   = readDoubleOrNull(ui.electronIncidentAngle);
+            s.electronTakeoffAngle    = readDoubleOrNull(ui.electronTakeoffAngle);
+            s.charZuCont              = readDoubleOrNull(ui.charZuCont);
+            s.charZuContL             = readDoubleOrNull(ui.charZuContL);
+            s.windowMaterial          = emptyToNull(ui.windowMaterial.getText());
+            s.windowMaterialThickness = readDoubleOrNull(ui.windowMaterialThickness);
+            s.tubeCurrent             = readDoubleOrNull(ui.tubeCurrent);
+            s.xRayTubeVoltage         = readDoubleOrNull(ui.xRayTubeVoltage);
+            s.sigmaConst              = readDoubleOrNull(ui.sigmaConst);
+            s.energieStep             = readDoubleOrNull(ui.energieStep);
+            s.measurementTime         = readDoubleOrNull(ui.measurementTime);
+            s.tubeModel               = emptyToNull(ui.tubeModel.getValue());
+
+            // Detector
+            s.windowMaterialDet        = emptyToNull(ui.windowMaterialDet.getText());
+            s.thicknessWindowDet       = readDoubleOrNull(ui.thicknessWindowDet);
+            s.contactlayerDet          = emptyToNull(ui.contactlayerDet.getText());
+            s.contactlayerThicknessDet = readDoubleOrNull(ui.contactlayerThicknessDet);
+            s.detectorMaterial         = emptyToNull(ui.detectorMaterial.getText());
+            s.inactiveLayer            = readDoubleOrNull(ui.inactiveLayer);
+            s.activeLayer              = readDoubleOrNull(ui.activeLayer);
+
+            // Function-Filter Defaults
+            s.tubeFuncDefault = ui.tubeFuncDefault.get(); // DoubleProperty → primitive double
+            s.detFuncDefault  = ui.detFuncDefault.get();
+
+            // Flag
+            s.autoLoadLast = ui.chkAutoLoadLast.isSelected();
+
+
+            // --- Material-Filter (Tube) exportieren ---
+            s.tubeMatFilters = new java.util.ArrayList<>();
+            for (Verbindung v : ui.tubeFilterVerbindungen) {
+                MatFilterDTO d = new MatFilterDTO();
+                d.formula     = ui.tubeFormulaText.getOrDefault(v, ""); // Anzeigename/Formel
+                d.density     = v.getDichte();
+                d.thicknessCm = v.getFensterDickeCm();
+                d.use         = ui.tubeFilterUse.getOrDefault(v, Boolean.TRUE);
+                s.tubeMatFilters.add(d);
+            }
+
+// --- Material-Filter (Detector) exportieren ---
+            s.detMatFilters = new java.util.ArrayList<>();
+            for (Verbindung v : ui.detFilterVerbindungen) {
+                MatFilterDTO d = new MatFilterDTO();
+                d.formula     = ui.detFormulaText.getOrDefault(v, "");
+                d.density     = v.getDichte();
+                d.thicknessCm = v.getFensterDickeCm();
+                d.use         = ui.detFilterUse.getOrDefault(v, Boolean.TRUE);
+                s.detMatFilters.add(d);
+            }
+
+// --- Funktions-Filter (Tube) exportieren ---
+            s.tubeFuncSegs = new java.util.ArrayList<>();
+            for (PwSegment seg : ui.tubeFuncSegs) {
+                SegmentDTO d = new SegmentDTO();
+                d.enabled = seg.enabled;
+                d.expr    = seg.expr;
+                d.a = seg.a; d.b = seg.b;
+                d.inclA = seg.inclA; d.inclB = seg.inclB;
+                d.clamp = seg.clamp; d.yMin = seg.yMin; d.yMax = seg.yMax;
+                s.tubeFuncSegs.add(d);
+            }
+
+// --- Funktions-Filter (Detector) exportieren ---
+            s.detFuncSegs = new java.util.ArrayList<>();
+            for (PwSegment seg : ui.detFuncSegs) {
+                SegmentDTO d = new SegmentDTO();
+                d.enabled = seg.enabled;
+                d.expr    = seg.expr;
+                d.a = seg.a; d.b = seg.b;
+                d.inclA = seg.inclA; d.inclB = seg.inclB;
+                d.clamp = seg.clamp; d.yMin = seg.yMin; d.yMax = seg.yMax;
+                s.detFuncSegs.add(d);
+            }
+
+
+            return s;
+        }
+
+        // --------- Settings -> UI: null == leer anzeigen ----------
+        void applyToUI(JavaFx ui) {
+            ui.cmbDataSource.setValue(nullToMcMaster(dataSource));
+            ui.txtDataFile.setText(nullToEmpty(dataFile));
+
+            ui.tubeMaterial.setText(nullToEmpty(tubeMaterial));
+            ui.electronIncidentAngle.setText(doubleToStr(electronIncidentAngle));
+            ui.electronTakeoffAngle.setText(doubleToStr(electronTakeoffAngle));
+            ui.charZuCont.setText(doubleToStr(charZuCont));
+            ui.charZuContL.setText(doubleToStr(charZuContL));
+            ui.windowMaterial.setText(nullToEmpty(windowMaterial));
+            ui.windowMaterialThickness.setText(doubleToStr(windowMaterialThickness));
+            ui.tubeCurrent.setText(doubleToStr(tubeCurrent));
+            ui.xRayTubeVoltage.setText(doubleToStr(xRayTubeVoltage));
+            ui.sigmaConst.setText(doubleToStr(sigmaConst));
+            ui.energieStep.setText(doubleToStr(energieStep));
+            ui.measurementTime.setText(doubleToStr(measurementTime));
+            if (tubeModel != null && ui.tubeModel.getItems().contains(tubeModel)) {
+                ui.tubeModel.setValue(tubeModel);
+            }
+
+            ui.windowMaterialDet.setText(nullToEmpty(windowMaterialDet));
+            ui.thicknessWindowDet.setText(doubleToStr(thicknessWindowDet));
+            ui.contactlayerDet.setText(nullToEmpty(contactlayerDet));
+            ui.contactlayerThicknessDet.setText(doubleToStr(contactlayerThicknessDet));
+            ui.detectorMaterial.setText(nullToEmpty(detectorMaterial));
+            ui.inactiveLayer.setText(doubleToStr(inactiveLayer));
+            ui.activeLayer.setText(doubleToStr(activeLayer));
+
+            ui.tubeFuncDefault.set(safeOr(ui.tubeFuncDefault.get(), tubeFuncDefault, 1.0));
+            ui.detFuncDefault.set(safeOr(ui.detFuncDefault.get(),  detFuncDefault,  1.0));
+
+            ui.chkAutoLoadLast.setSelected(Boolean.TRUE.equals(autoLoadLast));
+
+
+
+            // --- Material-Filter (Tube) wiederherstellen ---
+            if (tubeMatFilters != null) {
+                ui.tubeFilterVerbindungen.clear();
+                ui.tubeFormulaText.clear();
+                ui.tubeFilterUse.clear();
+                for (MatFilterDTO d : tubeMatFilters) {
+                    String formula = (d.formula == null ? "Al" : d.formula.trim());
+                    double rho     = d.density;
+                    double thick   = d.thicknessCm;
+                    Verbindung v   = ui.buildVerbindungFromSpec(formula, rho, thick);
+                    ui.tubeFilterVerbindungen.add(v);
+                    ui.tubeFormulaText.put(v, formula);
+                    ui.tubeFilterUse.put(v, d.use);
+                }
+            }
+
+// --- Material-Filter (Detector) wiederherstellen ---
+            if (detMatFilters != null) {
+                ui.detFilterVerbindungen.clear();
+                ui.detFormulaText.clear();
+                ui.detFilterUse.clear();
+                for (MatFilterDTO d : detMatFilters) {
+                    String formula = (d.formula == null ? "Al" : d.formula.trim());
+                    double rho     = d.density;
+                    double thick   = d.thicknessCm;
+                    Verbindung v   = ui.buildVerbindungFromSpec(formula, rho, thick);
+                    ui.detFilterVerbindungen.add(v);
+                    ui.detFormulaText.put(v, formula);
+                    ui.detFilterUse.put(v, d.use);
+                }
+            }
+
+// --- Funktions-Filter (Tube) wiederherstellen ---
+            if (tubeFuncSegs != null) {
+                ui.tubeFuncSegs.clear();
+                for (SegmentDTO d : tubeFuncSegs) {
+                    PwSegment s = new PwSegment();
+                    s.enabled = d.enabled;
+                    s.type = SegmentType.EXPR; // wir verwenden EXPR
+                    s.expr = d.expr;
+                    s.a = d.a; s.b = d.b;
+                    s.inclA = d.inclA; s.inclB = d.inclB;
+                    s.clamp = d.clamp; s.yMin = d.yMin; s.yMax = d.yMax;
+                    ui.tubeFuncSegs.add(s);
+                }
+                // Segmente auf aktuelle Verbindungen anwenden
+                ui.applySegmentsToVerbindungen(ui.tubeFilterVerbindungen, ui.tubeFuncSegs, ui.tubeFuncDefault.get());
+            }
+
+// --- Funktions-Filter (Detector) wiederherstellen ---
+            if (detFuncSegs != null) {
+                ui.detFuncSegs.clear();
+                for (SegmentDTO d : detFuncSegs) {
+                    PwSegment s = new PwSegment();
+                    s.enabled = d.enabled;
+                    s.type = SegmentType.EXPR;
+                    s.expr = d.expr;
+                    s.a = d.a; s.b = d.b;
+                    s.inclA = d.inclA; s.inclB = d.inclB;
+                    s.clamp = d.clamp; s.yMin = d.yMin; s.yMax = d.yMax;
+                    ui.detFuncSegs.add(s);
+                }
+                ui.applySegmentsToVerbindungen(ui.detFilterVerbindungen, ui.detFuncSegs, ui.detFuncDefault.get());
+            }
+
+
+            // Laufzeit: DATA_FILE aktualisieren
+            ui.applyDataSourceToRuntime();
+        }
+
+        private static String nullToMcMaster(String s){ return s==null? "McMaster": s; }
+        private static String nullToEmpty(String s){ return s==null? "": s; }
+        private static String emptyToNull(String s){ return (s==null || s.isBlank())? null : s.trim(); }
+        private static String doubleToStr(Double d){ return d==null? "" : Double.toString(d); }
+        private static Double safeOr(double current, Double v, double def){ return v!=null? v : (current!=0? current : def); }
+    }
+
+    private static Double readDoubleOrNull(TextField tf) {
+        String s = (tf == null) ? null : tf.getText();
+        if (s == null || s.isBlank()) return null;
+        try {
+            return Double.parseDouble(s.trim().replace(',', '.'));
+        } catch (Exception ignored) {
+            return null; // ungültig -> null
+        }
+    }
+
+
+
+    private static void prefsPutStr(Preferences n, String k, String v) {
+        n.put(k, v == null ? "" : v);
+    }
+    private static void prefsPutDouble(Preferences n, String k, Double v) {
+        if (v != null) n.putDouble(k, v); else { try { n.remove(k); } catch (Exception ignore) {} }
+    }
+    private static void prefsPutBool(Preferences n, String k, Boolean v) {
+        if (v != null) n.putBoolean(k, v); else { try { n.remove(k); } catch (Exception ignore) {} }
+    }
+
+    private void saveProfileToPrefs(String name, AppSettings s) {
+        var node = prefs.node("profiles").node(name);
+
+        // Strings
+        putMaybeString(node, "dataSource", s.dataSource);
+        putMaybeString(node, "dataFile",   s.dataFile);
+        putMaybeString(node, "tubeMaterial", s.tubeMaterial);
+        putMaybeString(node, "windowMaterial", s.windowMaterial);
+        putMaybeString(node, "tubeModel", s.tubeModel);
+
+        putMaybeString(node, "windowMaterialDet", s.windowMaterialDet);
+        putMaybeString(node, "contactlayerDet",   s.contactlayerDet);
+        putMaybeString(node, "detectorMaterial",  s.detectorMaterial);
+
+        // Zahlen als String (leere bleiben leer)
+        putMaybeDouble(node, "electronIncidentAngle", s.electronIncidentAngle);
+        putMaybeDouble(node, "electronTakeoffAngle",  s.electronTakeoffAngle);
+        putMaybeDouble(node, "charZuCont", s.charZuCont);
+        putMaybeDouble(node, "charZuContL", s.charZuContL);
+        putMaybeDouble(node, "windowMaterialThickness", s.windowMaterialThickness);
+        putMaybeDouble(node, "tubeCurrent", s.tubeCurrent);
+        putMaybeDouble(node, "xRayTubeVoltage", s.xRayTubeVoltage);
+        putMaybeDouble(node, "sigmaConst", s.sigmaConst);
+        putMaybeDouble(node, "energieStep", s.energieStep);
+        putMaybeDouble(node, "measurementTime", s.measurementTime);
+
+        putMaybeDouble(node, "thicknessWindowDet", s.thicknessWindowDet);
+        putMaybeDouble(node, "contactlayerThicknessDet", s.contactlayerThicknessDet);
+        putMaybeDouble(node, "inactiveLayer", s.inactiveLayer);
+        putMaybeDouble(node, "activeLayer",   s.activeLayer);
+
+        putMaybeDouble(node, "tubeFuncDefault", s.tubeFuncDefault);
+        putMaybeDouble(node, "detFuncDefault",  s.detFuncDefault);
+
+        node.putBoolean("autoLoadLast", s.autoLoadLast != null && s.autoLoadLast);
+
+        // (deine Filter/Segmente speicherst du weiter wie bisher)
+
+        prefs.put("lastProfile", name);
+    }
+
+
+
+    private static void deleteChildren(Preferences p) {
+        try {
+            for (String c : p.childrenNames()) {
+                p.node(c).removeNode();
+            }
+        } catch (Exception ignore) {}
+    }
+
+    private void saveMatFiltersToPrefs(Preferences p, java.util.List<Verbindung> list,
+                                       java.util.Map<Verbindung,String> textMap,
+                                       java.util.Map<Verbindung,Boolean> useMap) {
+        // vorherige Einträge leeren
+        deleteChildren(p);
+        p.putInt("count", list.size());
+        for (int i = 0; i < list.size(); i++) {
+            Verbindung v = list.get(i);
+            Preferences c = p.node(Integer.toString(i));
+            c.put("formula", textMap.getOrDefault(v, ""));
+            c.putDouble("density", v.getDichte());
+            c.putDouble("thicknessCm", v.getFensterDickeCm());
+            c.putBoolean("use", useMap.getOrDefault(v, Boolean.TRUE));
+        }
+    }
+
+    private void saveFuncSegsToPrefs(Preferences p, java.util.List<PwSegment> segs) {
+        deleteChildren(p);
+        p.putInt("count", segs.size());
+        for (int i = 0; i < segs.size(); i++) {
+            PwSegment s = segs.get(i);
+            Preferences c = p.node(Integer.toString(i));
+            c.putBoolean("enabled", s.enabled);
+            c.put("expr", s.expr==null? "": s.expr);
+            c.putDouble("a", s.a);
+            c.putDouble("b", s.b);
+            c.putBoolean("inclA", s.inclA);
+            c.putBoolean("inclB", s.inclB);
+            c.putBoolean("clamp", s.clamp);
+            c.putDouble("yMin", s.yMin);
+            c.putDouble("yMax", s.yMax);
+        }
+    }
+
+
+    private AppSettings loadProfileFromPrefs(String name) {
+        var node = prefs.node("profiles").node(name);
+        AppSettings s = new AppSettings();
+
+        // Strings
+        s.dataSource = getMaybeString(node, "dataSource");
+        s.dataFile   = getMaybeString(node, "dataFile");
+        s.tubeMaterial = getMaybeString(node, "tubeMaterial");
+        s.windowMaterial = getMaybeString(node, "windowMaterial");
+        s.tubeModel = getMaybeString(node, "tubeModel");
+
+        s.windowMaterialDet = getMaybeString(node, "windowMaterialDet");
+        s.contactlayerDet   = getMaybeString(node, "contactlayerDet");
+        s.detectorMaterial  = getMaybeString(node, "detectorMaterial");
+
+        // Zahlen (bleiben null, wenn leer)
+        s.electronIncidentAngle   = getMaybeDouble(node, "electronIncidentAngle");
+        s.electronTakeoffAngle    = getMaybeDouble(node, "electronTakeoffAngle");
+        s.charZuCont              = getMaybeDouble(node, "charZuCont");
+        s.charZuContL             = getMaybeDouble(node, "charZuContL");
+        s.windowMaterialThickness = getMaybeDouble(node, "windowMaterialThickness");
+        s.tubeCurrent             = getMaybeDouble(node, "tubeCurrent");
+        s.xRayTubeVoltage         = getMaybeDouble(node, "xRayTubeVoltage");
+        s.sigmaConst              = getMaybeDouble(node, "sigmaConst");
+        s.energieStep             = getMaybeDouble(node, "energieStep");
+        s.measurementTime         = getMaybeDouble(node, "measurementTime");
+
+        s.thicknessWindowDet       = getMaybeDouble(node, "thicknessWindowDet");
+        s.contactlayerThicknessDet = getMaybeDouble(node, "contactlayerThicknessDet");
+        s.inactiveLayer            = getMaybeDouble(node, "inactiveLayer");
+        s.activeLayer              = getMaybeDouble(node, "activeLayer");
+
+        s.tubeFuncDefault = getMaybeDouble(node, "tubeFuncDefault");
+        s.detFuncDefault  = getMaybeDouble(node, "detFuncDefault");
+
+        s.autoLoadLast = node.getBoolean("autoLoadLast", false);
+
+        // (Filter/Segmente weiter wie bisher laden)
+        s.tubeMatFilters = loadMatFiltersFromPrefs(node.node("tubeFilters"));
+        s.detMatFilters  = loadMatFiltersFromPrefs(node.node("detFilters"));
+        s.tubeFuncSegs   = loadFuncSegsFromPrefs(node.node("tubeFuncSegs"));
+        s.detFuncSegs    = loadFuncSegsFromPrefs(node.node("detFuncSegs"));
+
+        return s;
+    }
+
+
+    private java.util.List<MatFilterDTO> loadMatFiltersFromPrefs(Preferences p) {
+        java.util.List<MatFilterDTO> out = new java.util.ArrayList<>();
+        if (p == null) return out;
+        int n = p.getInt("count", -1);
+        try {
+            if (n >= 0) {
+                for (int i = 0; i < n; i++) {
+                    Preferences c = p.node(Integer.toString(i));
+                    MatFilterDTO d = new MatFilterDTO();
+                    d.formula     = c.get("formula", "");
+                    d.density     = c.getDouble("density", 0.0);
+                    d.thicknessCm = c.getDouble("thicknessCm", 0.0);
+                    d.use         = c.getBoolean("use", true);
+                    out.add(d);
+                }
+            } else {
+                // Fallback: falls kein "count" existiert, anhand childrenNames() laden
+                for (String child : p.childrenNames()) {
+                    Preferences c = p.node(child);
+                    MatFilterDTO d = new MatFilterDTO();
+                    d.formula     = c.get("formula", "");
+                    d.density     = c.getDouble("density", 0.0);
+                    d.thicknessCm = c.getDouble("thicknessCm", 0.0);
+                    d.use         = c.getBoolean("use", true);
+                    out.add(d);
+                }
+            }
+        } catch (Exception ignore) {}
+        return out;
+    }
+
+    private java.util.List<SegmentDTO> loadFuncSegsFromPrefs(Preferences p) {
+        java.util.List<SegmentDTO> out = new java.util.ArrayList<>();
+        if (p == null) return out;
+        int n = p.getInt("count", -1);
+        try {
+            if (n >= 0) {
+                for (int i = 0; i < n; i++) {
+                    Preferences c = p.node(Integer.toString(i));
+                    SegmentDTO d = new SegmentDTO();
+                    d.enabled = c.getBoolean("enabled", true);
+                    d.expr    = c.get("expr", "1");
+                    d.a       = c.getDouble("a", 0.0);
+                    d.b       = c.getDouble("b", Math.max(1.0, globalEmax()));
+                    d.inclA   = c.getBoolean("inclA", true);
+                    d.inclB   = c.getBoolean("inclB", true);
+                    d.clamp   = c.getBoolean("clamp", false);
+                    d.yMin    = c.getDouble("yMin", 0.0);
+                    d.yMax    = c.getDouble("yMax", 0.0);
+                    out.add(d);
+                }
+            } else {
+                for (String child : p.childrenNames()) {
+                    Preferences c = p.node(child);
+                    SegmentDTO d = new SegmentDTO();
+                    d.enabled = c.getBoolean("enabled", true);
+                    d.expr    = c.get("expr", "1");
+                    d.a       = c.getDouble("a", 0.0);
+                    d.b       = c.getDouble("b", Math.max(1.0, globalEmax()));
+                    d.inclA   = c.getBoolean("inclA", true);
+                    d.inclB   = c.getBoolean("inclB", true);
+                    d.clamp   = c.getBoolean("clamp", false);
+                    d.yMin    = c.getDouble("yMin", 0.0);
+                    d.yMax    = c.getDouble("yMax", 0.0);
+                    out.add(d);
+                }
+            }
+        } catch (Exception ignore) {}
+        return out;
+    }
+
+
+
+    private void refreshProfileList() {
+        try {
+            // vorhandene Profilknoten
+            String[] names = prefs.node("profiles").childrenNames();
+            java.util.Set<String> existing = new java.util.LinkedHashSet<>();
+            java.util.Collections.addAll(existing, names);
+
+            // gewünschte Reihenfolge laden und nur existierende Namen übernehmen
+            java.util.List<String> order = loadProfilesOrderFromPrefs();
+            java.util.List<String> result = new java.util.ArrayList<>();
+
+            for (String n : order) {
+                if (existing.remove(n)) { // nur wenn es den Knoten gibt
+                    result.add(n);
+                }
+            }
+            // alles, was (neu) existiert, aber noch nicht in 'order' war, hinten anhängen (alphabetisch oder so)
+            java.util.List<String> rest = new java.util.ArrayList<>(existing);
+            java.util.Collections.sort(rest, String.CASE_INSENSITIVE_ORDER); // optional
+            result.addAll(rest);
+
+            lstProfiles.getItems().setAll(result);
+
+            // falls Reihenfolge geändert wurde (z.B. neue Profile), gleich zurückschreiben
+            saveProfilesOrderToPrefs(result);
+
+        } catch (Exception ignore) {
+            lstProfiles.getItems().clear();
+        }
+    }
+
+
+    private void applyDataSourceToRuntime() {
+        String sel = cmbDataSource.getValue();
+        if ("Custom…".equals(sel)) {
+            DATA_FILE = txtDataFile.getText()==null? "": txtDataFile.getText().trim();
+        } else {
+            DATA_FILE = "MCMASTER.TXT";
+        }
+    }
+
+    private void autoLoadLastProfileIfWanted() {
+        String last = prefs.get("lastProfile", null);
+        boolean globalAuto = prefs.getBoolean("autoLoadGlobal", false);
+        if (last != null) {
+            var s = loadProfileFromPrefs(last);
+            if (s.autoLoadLast || globalAuto) {
+                s.applyToUI(this);
+                refreshProfileList();
+                lstProfiles.getSelectionModel().select(last);
+            }
+        } else if (globalAuto) {
+            // kein Profil gespeichert, aber Global-Auto an -> nichts tun
+        }
+    }
+
+    private void exportCurrentProfileToJson() {
+        try {
+            AppSettings s = AppSettings.fromUI(this);
+
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("Export profile as JSON");
+            fc.getExtensionFilters().add(
+                    new javafx.stage.FileChooser.ExtensionFilter("JSON files", "*.json")
+            );
+            var last = prefs.get("jsonLastDir", null);
+            if (last != null) {
+                var dir = new java.io.File(last);
+                if (dir.isDirectory()) fc.setInitialDirectory(dir);
+            }
+
+            var owner = (btnSaveProfile != null && btnSaveProfile.getScene()!=null)
+                    ? btnSaveProfile.getScene().getWindow() : null;
+            var f = fc.showSaveDialog(owner);
+            if (f == null) return;
+
+            java.io.File out = f.getName().toLowerCase().endsWith(".json")
+                    ? f
+                    : new java.io.File(f.getParentFile(), f.getName() + ".json");
+
+            mapper.writeValue(out, s);
+
+            prefs.put("jsonLastDir", out.getParentFile().getAbsolutePath());
+            new Alert(Alert.AlertType.INFORMATION,
+                    "Profile exported:\n" + out.getAbsolutePath()).showAndWait();
+        } catch (Exception ex) {
+            new Alert(Alert.AlertType.ERROR,
+                    "Export failed:\n" + ex.getMessage()).showAndWait();
+        }
+    }
+
+    private void importProfileFromJson() {
+        try {
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("Import profile from JSON");
+            fc.getExtensionFilters().add(
+                    new javafx.stage.FileChooser.ExtensionFilter("JSON files", "*.json")
+            );
+            var last = prefs.get("jsonLastDir", null);
+            if (last != null) {
+                var dir = new java.io.File(last);
+                if (dir.isDirectory()) fc.setInitialDirectory(dir);
+            }
+
+            var owner = (btnLoadProfile != null && btnLoadProfile.getScene()!=null)
+                    ? btnLoadProfile.getScene().getWindow() : null;
+            var f = fc.showOpenDialog(owner);
+            if (f == null) return;
+
+            AppSettings s = mapper.readValue(f, AppSettings.class);
+            s.applyToUI(this);
+
+            String base = f.getName().replaceFirst("\\.json$", "");
+            prefs.put("lastProfile", base);
+            saveProfileToPrefs(base, s);
+            refreshProfileList();
+            lstProfiles.getSelectionModel().select(base);
+
+            prefs.put("jsonLastDir", f.getParentFile().getAbsolutePath());
+            new Alert(Alert.AlertType.INFORMATION,
+                    "Profile imported:\n" + f.getAbsolutePath()).showAndWait();
+        } catch (Exception ex) {
+            new Alert(Alert.AlertType.ERROR,
+                    "Import failed:\n" + ex.getMessage()).showAndWait();
+        }
+    }
+
+    // ====== Tab-Aufbau ======
+    private Tab buildPropertiesTab() {
+        Label lblSource = new Label("Data source:");
+        cmbDataSource = new ComboBox<>();
+        cmbDataSource.getItems().addAll("McMaster", "Custom…");
+        cmbDataSource.setValue("McMaster");
+
+        txtDataFile = new TextField();
+        txtDataFile.setPromptText("path/to/datafile.txt");
+        txtDataFile.setPrefColumnCount(28);
+        txtDataFile.setDisable(true);
+
+        btnBrowseData = new Button("Browse…");
+        btnBrowseData.setDisable(true);
+
+        Button btnUpOrder = new Button("↑");
+        Button btnDownOrder = new Button("↓");
+
+        cmbDataSource.valueProperty().addListener((o, ov, nv) -> {
+            boolean custom = "Custom…".equals(nv);
+            txtDataFile.setDisable(!custom);
+            btnBrowseData.setDisable(!custom);
+            applyDataSourceToRuntime();
+        });
+
+
+        btnUpOrder.setOnAction(e -> {
+            int i = lstProfiles.getSelectionModel().getSelectedIndex();
+            if (i > 0) {
+                var items = lstProfiles.getItems();
+                String a = items.get(i - 1);
+                String b = items.get(i);
+                items.set(i - 1, b);
+                items.set(i, a);
+                lstProfiles.getSelectionModel().select(i - 1);
+                saveProfilesOrderToPrefs(items);
+            }
+        });
+
+        btnDownOrder.setOnAction(e -> {
+            int i = lstProfiles.getSelectionModel().getSelectedIndex();
+            var items = lstProfiles.getItems();
+            if (i >= 0 && i < items.size() - 1) {
+                String a = items.get(i);
+                String b = items.get(i + 1);
+                items.set(i, b);
+                items.set(i + 1, a);
+                lstProfiles.getSelectionModel().select(i + 1);
+                saveProfilesOrderToPrefs(items);
+            }
+        });
+
+
+        btnBrowseData.setOnAction(e -> {
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("Choose data file");
+            fc.getExtensionFilters().addAll(
+                    new javafx.stage.FileChooser.ExtensionFilter("Text files", "*.txt", "*.dat", "*.csv"),
+                    new javafx.stage.FileChooser.ExtensionFilter("All files", "*.*")
+            );
+            var owner = (btnBrowseData.getScene()!=null) ? btnBrowseData.getScene().getWindow() : null;
+            var f = fc.showOpenDialog(owner);
+            if (f != null) {
+                txtDataFile.setText(f.getAbsolutePath());
+                applyDataSourceToRuntime();
+            }
+        });
+
+        chkAutoLoadLast = new CheckBox("Auto-load last profile at startup");
+
+        lstProfiles = new ListView<>();
+        lstProfiles.setPrefHeight(180);
+
+        txtProfileName = new TextField();
+        txtProfileName.setPromptText("profile name");
+
+        btnSaveProfile = new Button("Save");
+        btnLoadProfile = new Button("Load");
+        btnDeleteProfile = new Button("Delete");
+
+        Button btnExportJson = new Button("Export JSON…");
+        Button btnImportJson = new Button("Import JSON…");
+
+        btnSaveProfile.setOnAction(e -> {
+            String name = txtProfileName.getText();
+            if (name == null || name.isBlank()) {
+                new Alert(Alert.AlertType.WARNING, "Please enter a profile name.").showAndWait();
+                return;
+            }
+            var s = AppSettings.fromUI(this);
+            s.autoLoadLast = chkAutoLoadLast.isSelected();
+            saveProfileToPrefs(name, s);
+            refreshProfileList();
+            lstProfiles.getSelectionModel().select(name);
+            saveProfilesOrderToPrefs(lstProfiles.getItems());
+        });
+
+        btnLoadProfile.setOnAction(e -> {
+            String name = lstProfiles.getSelectionModel().getSelectedItem();
+            if (name == null) return;
+            var s = loadProfileFromPrefs(name);
+            s.applyToUI(this);
+            prefs.put("lastProfile", name);
+        });
+
+        btnDeleteProfile.setOnAction(e -> {
+            String name = lstProfiles.getSelectionModel().getSelectedItem();
+            if (name == null) return;
+            try {
+                prefs.node("profiles").node(name).removeNode();
+                saveProfilesOrderToPrefs(lstProfiles.getItems());
+            } catch (Exception ignore) {}
+            refreshProfileList();
+        });
+
+        chkAutoLoadLast.setOnAction(e -> {
+            boolean on = chkAutoLoadLast.isSelected();
+            String last = prefs.get("lastProfile", null);
+            if (last != null) {
+                var s = loadProfileFromPrefs(last);
+                s.autoLoadLast = on;
+                saveProfileToPrefs(last, s);
+            } else {
+                prefs.putBoolean("autoLoadGlobal", on);
+            }
+        });
+
+        btnExportJson.setOnAction(e -> exportCurrentProfileToJson());
+        btnImportJson.setOnAction(e -> importProfileFromJson());
+
+        var rowSource = new HBox(10, lblSource, cmbDataSource, txtDataFile, btnBrowseData);
+        rowSource.setAlignment(Pos.CENTER_LEFT);
+
+
+        var profileControls = new HBox(8,
+                txtProfileName, btnSaveProfile, btnLoadProfile, btnDeleteProfile,
+                new Separator(), btnUpOrder, btnDownOrder,
+                new Separator(), btnExportJson, btnImportJson
+        );
+
+
+        profileControls.setAlignment(Pos.CENTER_LEFT);
+
+        var left = new VBox(10,
+                new Label("Data"),
+                rowSource,
+                new Separator(),
+                new Label("Profiles"),
+                lstProfiles,
+                profileControls,
+                chkAutoLoadLast
+        );
+        left.setPadding(new Insets(14));
+
+        refreshProfileList();
+        javafx.application.Platform.runLater(this::autoLoadLastProfileIfWanted);
+
+        return new Tab("Properties", left);
+    }
+
+    // --- DTOs für JSON (innerhalb von JavaFx, z.B. direkt über AppSettings oder darunter) ---
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private static class MatFilterDTO {
+        public String formula;      // z.B. "Al" oder "Rh0.8Cu0.2"
+        public double density;      // g/cm^3
+        public double thicknessCm;  // cm
+        public boolean use;         // Use-Checkbox
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private static class SegmentDTO {
+        public boolean enabled;
+        public String expr;     // Ausdruck (mXparser), wir verwenden nur EXPR-Segmente
+        public double a, b;
+        public boolean inclA, inclB;
+        public boolean clamp;
+        public double yMin, yMax;
+    }
+
+
+    // Speichert die aktuelle Reihenfolge der Profilnamen (eine Zeile pro Name)
+    private void saveProfilesOrderToPrefs(java.util.List<String> names) {
+        prefs.put("profilesOrder", String.join("\n", names));
+    }
+
+    // Lädt die gewünschte Reihenfolge; falls leer/nicht vorhanden => leere Liste
+    private java.util.List<String> loadProfilesOrderFromPrefs() {
+        String s = prefs.get("profilesOrder", "");
+        if (s == null || s.isBlank()) return new java.util.ArrayList<>();
+        return new java.util.ArrayList<>(java.util.Arrays.asList(s.split("\\R")));
+    }
+
+    private static void putMaybeDouble(Preferences p, String key, Double v) {
+        if (v == null) {
+            p.put(key, "");            // leer bleibt leer
+        } else {
+            p.put(key, v.toString());  // als String speichern
+        }
+    }
+
+    private static Double getMaybeDouble(Preferences p, String key) {
+        String s = p.get(key, null);   // nicht getDouble!
+        if (s == null || s.isBlank()) return null;
+        try {
+            return Double.parseDouble(s.trim().replace(',', '.'));
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private static void putMaybeString(Preferences p, String key, String v) {
+        p.put(key, v == null ? "" : v);
+    }
+
+    private static String getMaybeString(Preferences p, String key) {
+        String s = p.get(key, "");
+        return (s == null || s.isBlank()) ? "" : s;
+    }
+
+
+
+
+    // --- Konzentrations-Tab: Modell/State ---
+    private final ObservableList<java.nio.file.Path> concPaths = FXCollections.observableArrayList();
+    private static final java.util.Set<String> SUPPORTED_EXTS =
+            java.util.Set.of("asr", "fit");
+
+
+    private Tab buildConcentrationsTab() {
+        Label title = new Label("Konzentrationen – Dateien");
+        title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+
+        // Liste (nur Dateinamen)
+        ListView<java.nio.file.Path> list = new ListView<>(concPaths);
+        list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        });
+        // Doppelklick -> Popup/Table-Viewer (falls du den schon hast)
+        list.setOnMouseClicked(ev -> {
+            if (ev.getClickCount() == 2) {
+                var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+                if (sel.isEmpty()) {
+                    var one = list.getSelectionModel().getSelectedItem();
+                    if (one != null) sel.add(one);
+                }
+                if (!sel.isEmpty()) openConcPopup(sel, list.getScene()!=null ? list.getScene().getWindow() : null);
+            }
+        });
+        // Drag & Drop
+        list.setOnDragOver(ev -> {
+            var db = ev.getDragboard();
+            if (db.hasFiles() && db.getFiles().stream().anyMatch(f -> isSupported(f.toPath()))) {
+                ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            }
+            ev.consume();
+        });
+        list.setOnDragDropped(ev -> {
+            var db = ev.getDragboard();
+            boolean ok = false;
+            if (db.hasFiles()) {
+                addFiles(db.getFiles().stream().map(java.io.File::toPath).toList());
+                ok = true;
+            }
+            ev.setDropCompleted(ok);
+            ev.consume();
+        });
+
+        // Buttons oben
+        Button btnAdd    = new Button("Dateien hinzufügen…");
+        Button btnOpen   = new Button("Öffnen (Tabelle)");
+        Button btnRemove = new Button("Entfernen");
+        Button btnClear  = new Button("Leeren");
+
+        btnAdd.setOnAction(e -> chooseAndAddFiles(btnAdd.getScene()!=null ? btnAdd.getScene().getWindow() : null));
+        btnOpen.setOnAction(e -> {
+            var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            if (sel.isEmpty()) {
+                var one = list.getSelectionModel().getSelectedItem();
+                if (one != null) sel.add(one);
+            }
+            if (!sel.isEmpty()) openConcPopup(sel, list.getScene()!=null ? list.getScene().getWindow() : null);
+        });
+        btnRemove.setOnAction(e -> {
+            var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            concPaths.removeAll(sel);
+        });
+        btnClear.setOnAction(e -> concPaths.clear());
+
+        HBox controls = new HBox(8, btnAdd, btnOpen, new Separator(), btnRemove, btnClear);
+        controls.setAlignment(Pos.CENTER_LEFT);
+
+        // --- NUR ComboBox unter der Liste (Tabelle entfällt) ---
+        Label selLbl = new Label("Datei-Auswahl:");
+        ComboBox<java.nio.file.Path> cboFile = new ComboBox<>(concPaths);
+
+        // Anzeige nur Dateiname
+        javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
+            @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        };
+        cboFile.setCellFactory(pathCellFactory);
+        cboFile.setButtonCell(pathCellFactory.call(null));
+        cboFile.setPrefWidth(320);
+
+        Button btnShowSelected = new Button("Anzeigen");
+        btnShowSelected.setOnAction(e -> {
+            var p = cboFile.getValue();
+            if (p != null) openConcPopup(java.util.List.of(p), cboFile.getScene()!=null ? cboFile.getScene().getWindow() : null);
+        });
+
+        // deaktivieren, wenn leer/keine Auswahl
+        cboFile.disableProperty().bind(Bindings.isEmpty(concPaths));
+        btnShowSelected.disableProperty().bind(Bindings.isNull(cboFile.valueProperty()));
+
+        HBox underList = new HBox(10, selLbl, cboFile, btnShowSelected);
+        underList.setAlignment(Pos.CENTER_LEFT);
+
+        // Layout: einfacher Stack
+        VBox root = new VBox(10, title, controls, list, underList);
+        root.setPadding(new Insets(14));
+        VBox.setVgrow(list, Priority.ALWAYS); // <— wichtig: Liste wächst mit
+
+        return new Tab("Konzentrationen", root);
+    }
+
+
+
+
+    private void chooseAndAddFiles(Window owner) {
+        var fc = new javafx.stage.FileChooser();
+        fc.setTitle("ASR/FIT-Dateien auswählen");
+        fc.getExtensionFilters().addAll(
+                new javafx.stage.FileChooser.ExtensionFilter("ASR/FIT", "*.asr", "*.fit"),
+                new javafx.stage.FileChooser.ExtensionFilter("Alle Dateien", "*.*")
+        );
+        var chosen = fc.showOpenMultipleDialog(owner);
+        if (chosen != null && !chosen.isEmpty()) {
+            addFiles(chosen.stream().map(java.io.File::toPath).toList());
+        }
+    }
+
+    private void addFiles(java.util.Collection<java.nio.file.Path> paths) {
+        for (var p : paths) {
+            if (!isSupported(p)) continue;
+            if (!concPaths.contains(p)) concPaths.add(p); // de-dupe
+        }
+    }
+
+    private static boolean isSupported(java.nio.file.Path p) {
+        String n = p.getFileName().toString();
+        int i = n.lastIndexOf('.');
+        String ext = (i >= 0 ? n.substring(i+1) : "").toLowerCase(java.util.Locale.ROOT);
+        return SUPPORTED_EXTS.contains(ext);
+    }
+
+    // Platzhalter: hier später TableView öffnen
+    private void openConcTable(java.nio.file.Path p) {
+        if (p == null) return;
+        new Alert(Alert.AlertType.INFORMATION,
+                "Tabellenansicht folgt.\nDatei: " + p.getFileName()
+        ).showAndWait();
+    }
+
+
+    // --- Konzentrations-Zeilentyp für die editierbare Tabelle ---
+    public static class ConcRow {
+        public final javafx.beans.property.StringProperty element    = new javafx.beans.property.SimpleStringProperty();
+        public final javafx.beans.property.StringProperty transition = new javafx.beans.property.SimpleStringProperty(); // "K" | "L"
+        public final javafx.beans.property.DoubleProperty intensity  = new javafx.beans.property.SimpleDoubleProperty();
+        public ConcRow(String element, String transition, double intensity) {
+            this.element.set(element);
+            this.transition.set(transition);
+            this.intensity.set(intensity);
+        }
+    }
+
+
+
+    private java.util.Set<String> parseAnodeElements(String formula) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (formula == null) return out;
+        String f = formula.trim();
+        if (f.isEmpty()) return out;
+
+        // 1) bevorzugt: dein Parser
+        try {
+            Funktionen fk = new FunktionenImpl();
+            Verbindung v = fk.parseVerbindung(f, 0.0, 1.0, 0.1, DATA_FILE);
+            String[] syms = v.getSymbole();
+            if (syms != null) {
+                java.util.Collections.addAll(out, syms);
+                return out;
+            }
+        } catch (Throwable ignore) { }
+
+        // 2) Fallback: Enum-Symbole, die im String vorkommen
+        for (Elementsymbole e : Elementsymbole.values()) {
+            String sym = e.name();
+            if (f.matches(".*(?<![A-Za-z])" + java.util.regex.Pattern.quote(sym) + "(?![a-z]).*")) {
+                out.add(sym);
+            }
+        }
+        return out;
+    }
+
+
+
+    private javafx.collections.ObservableList<ConcRow> buildRowsForFiles(
+            java.util.List<java.nio.file.Path> files,
+            String tubeMaterialStr
+    ) {
+        // Anoden-Elemente
+        java.util.Set<String> exclude = parseAnodeElements(tubeMaterialStr);
+
+        // Sammeln: Element -> {K, L}
+        java.util.Map<String, double[]> sums = new java.util.LinkedHashMap<>();
+
+        for (var p : files) {
+            String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+            try {
+                if (name.endsWith(".fit")) {
+                    var fitAreas = FitParserPymca.extractFitAreas(p.toString());
+                    var grouped  = FitParserPymca.groupByElement(fitAreas);
+                    var counts   = FitParserPymca.getCountsPerElement(grouped); // int[]{K,L}
+
+                    for (var e : counts.entrySet()) {
+                        sums.computeIfAbsent(e.getKey(), k -> new double[2]);
+                        sums.get(e.getKey())[0] += e.getValue()[0];
+                        sums.get(e.getKey())[1] += e.getValue()[1];
+                    }
+
+                } else if (name.endsWith(".asr")) {
+                    var peaks   = AsrParser.extractPeaks(p);
+                    var grouped = AsrParser.groupByElement(peaks);
+                    var counts  = AsrParser.getCountsPerElement(grouped); // int[]{K,L}
+
+                    for (var e : counts.entrySet()) {
+                        sums.computeIfAbsent(e.getKey(), k -> new double[2]);
+                        sums.get(e.getKey())[0] += e.getValue()[0];
+                        sums.get(e.getKey())[1] += e.getValue()[1];
+                    }
+                }
+            } catch (Exception ex) {
+                new Alert(Alert.AlertType.ERROR, "Fehler beim Einlesen:\n" + p + "\n\n" + ex.getMessage()).showAndWait();
+            }
+        }
+
+        // In Zeilen nach deinen Regeln
+        var rows = javafx.collections.FXCollections.<ConcRow>observableArrayList();
+        for (var e : sums.entrySet()) {
+            String ele = e.getKey();
+            if (exclude.contains(ele)) continue;
+
+            double k = e.getValue()[0];
+            double l = e.getValue()[1];
+
+            boolean hasK = k != 0.0;
+            boolean hasL = l != 0.0;
+
+            if (!hasK && !hasL) continue;
+            if (hasK && hasL) { rows.add(new ConcRow(ele, "K", k)); continue; }
+            if (hasK)          { rows.add(new ConcRow(ele, "K", k)); }
+            else               { rows.add(new ConcRow(ele, "L", l)); }
+        }
+
+        rows.sort(java.util.Comparator.comparing(r -> r.element.get()));
+        return rows;
+    }
+
+    private javafx.collections.ObservableList<ConcRow> buildRowsForSingleFile(java.nio.file.Path file) {
+        return buildRowsForFiles(java.util.List.of(file), tubeMaterial == null ? null : tubeMaterial.getText());
+    }
+
+
+
+
+    private void openConcPopup(java.util.List<java.nio.file.Path> files, Window owner) {
+        Stage popup = new Stage();
+        popup.setTitle("Datenansicht (" + files.size() + ")");
+        if (owner != null) popup.initOwner(owner);
+        popup.setAlwaysOnTop(true);
+
+        TabPane tp = new TabPane();
+        tp.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+
+        // Liste aller Elementsymbole als Strings
+        var allSymbols = FXCollections.observableArrayList(
+                java.util.Arrays.stream(Elementsymbole.values()).map(Enum::name).toList()
+        );
+
+        for (var p : files) {
+            // flüchtige (neu geparste) Zeilen nur für dieses Tab
+            var rows = getOrBuildRowsForFile(p);
+
+
+            TableView<ConcRow> table = new TableView<>(rows);
+            table.setEditable(true);
+            table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+            table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+            // --- Spalten ---
+
+            // Element (ComboBox, editiert Property direkt)
+            TableColumn<ConcRow, String> cElement = new TableColumn<>("Element");
+            cElement.setCellValueFactory(data -> data.getValue().element);
+            cElement.setCellFactory(ComboBoxTableCell.forTableColumn(allSymbols));
+            cElement.setEditable(true);
+
+            // Übergang (K/L)
+            TableColumn<ConcRow, String> cTrans = new TableColumn<>("Übergang");
+            cTrans.setCellValueFactory(data -> data.getValue().transition);
+            cTrans.setCellFactory(ComboBoxTableCell.forTableColumn(
+                    FXCollections.observableArrayList("K", "L")
+            ));
+            cTrans.setEditable(true);
+
+            // Intensität (editierbares Number-Feld)
+            TableColumn<ConcRow, Number> cInt = new TableColumn<>("Intensität");
+            cInt.setCellValueFactory(data -> data.getValue().intensity);
+            cInt.setCellFactory(TextFieldTableCell.forTableColumn(new StringConverter<Number>() {
+                @Override public String toString(Number n) {
+                    return n == null ? "" : String.format(java.util.Locale.ROOT, "%.6g", n.doubleValue());
+                }
+                @Override public Number fromString(String s) {
+                    if (s == null || s.isBlank()) return 0.0;
+                    return Double.parseDouble(s.trim().replace(',', '.'));
+                }
+            }));
+            cInt.setOnEditCommit(ev -> {
+                ConcRow r = ev.getRowValue();
+                Number nv = ev.getNewValue();
+                if (nv != null && Double.isFinite(nv.doubleValue())) {
+                    r.intensity.set(nv.doubleValue());
+                }
+            });
+            cInt.setEditable(true);
+
+            table.getColumns().setAll(cElement, cTrans, cInt);
+
+            // --- Aktionen unter der Tabelle: + Neu / Löschen ---
+            Button btnAdd = new Button("+ Neu");
+            btnAdd.setOnAction(e ->
+                    rows.add(new ConcRow(Elementsymbole.values()[0].name(), "K", 0.0))
+            );
+
+            Button btnDel = new Button("Löschen");
+            btnDel.setOnAction(e -> {
+                var sel = new java.util.ArrayList<>(table.getSelectionModel().getSelectedItems());
+                rows.removeAll(sel);
+            });
+
+            HBox actions = new HBox(8, btnAdd, btnDel);
+            actions.setAlignment(Pos.CENTER_LEFT);
+
+            VBox content = new VBox(10, table, actions);
+            content.setPadding(new Insets(12));
+            VBox.setVgrow(table, Priority.ALWAYS);
+
+            Tab tab = new Tab(p.getFileName().toString(), content);
+            tab.setClosable(true);
+            tp.getTabs().add(tab);
+        }
+
+        Scene sc = new Scene(new BorderPane(tp), 800, 520);
+        popup.setScene(sc);
+        popup.show();
+    }
+    // Edits nur während der Laufzeit merken (kein Persistieren auf Platte)
+    private final java.util.Map<java.nio.file.Path, javafx.collections.ObservableList<ConcRow>>
+            concSessionCache = new java.util.LinkedHashMap<>();
+
+    private javafx.collections.ObservableList<ConcRow> getOrBuildRowsForFile(java.nio.file.Path file) {
+        return concSessionCache.computeIfAbsent(file, f ->
+                buildRowsForSingleFile(f) // deine bestehende Parser-Logik -> ObservableList<ConcRow>
+        );
+    }
+
+    private void resetConcForFile(java.nio.file.Path file) { concSessionCache.remove(file); }
+    private void resetAllConc() { concSessionCache.clear(); }
+
+
 
 
 

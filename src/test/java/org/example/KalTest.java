@@ -8,24 +8,25 @@ import java.util.List;
 public class KalTest {
     public static void main(String[] args) throws IOException {
         List<String[]> paraVar = Arrays.asList(
-                //new String[]{"sigma"},
+                new String[]{"sigma"},
                 new String[]{"Einfallswinkelalpha"},
                 new String[]{"activeLayer"},
                 new String[]{"Totschicht"},
                 new String[]{"charzucont_L"},
                 new String[]{"charzucont"},
-                new String[]{"Emax"},
+                //new String[]{"Emax"},
                 new String[]{"Kontaktmaterialdicke"}
 
         );
 
         List<double[]> grenzen = Arrays.asList(
+                new double[]{0.8, 1.0314},
                 new double[]{15, 25},
                 new double[]{2, 4},
                 new double[]{0.0, 0.2},
                 new double[]{0.1, 1.2},
                 new double[]{0.8, 1.1},
-                new double[]{35, 45},
+                //new double[]{35, 45},
                 new double[]{10, 40}
         );
         //int [] stepAnzahl = new int[]{3, 2,5,3,2};
@@ -61,7 +62,7 @@ public class KalTest {
             List<String> elementSymbole = Arrays.asList(symbol);
             List<Integer> elementInt = Arrays.asList(intensity);
 
-            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", 0, 35, 0.05, elementInt);
+            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", 0, 40, 0.05, elementInt);
             // Übergang aktivieren:
             if (uebergang == 0) {
                 probe.setzeUebergangAktivFuerElementKAlpha(0);

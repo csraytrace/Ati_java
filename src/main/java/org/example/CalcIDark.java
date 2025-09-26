@@ -461,7 +461,7 @@ public class CalcIDark {
         }
         indexMaxKonz = indexMax;
         maxValKonz = maxVal;
-        System.out.println("Startkonzentration: " + Arrays.toString(Startkonzentration));
+        //System.out.println("Startkonzentration: " + Arrays.toString(Startkonzentration));
 
         return Startkonzentration;
     }
@@ -827,8 +827,9 @@ public class CalcIDark {
         // Logging (optional)
         double[] residFinal = this.residuum(opt.getPoint().toArray(), lowVerteilungNeu, zMittelwert);
         double f = 0.0; for (double r : residFinal) f += r * r;
-        System.out.printf("[Hipparchus minlm] eval=%d it=%d, f=%.6e%n",
-                opt.getEvaluations(), opt.getIterations(), f);
+        //System.out.printf("[Hipparchus minlm] eval=%d it=%d, f=%.6e%n",
+             //   opt.getEvaluations(), opt.getIterations(), f);
+        printOptimizedResult(opt.getPoint().toArray(),lowVerteilung,zMittelwert);
 
         return opt.getPoint().toArray(); // reduzierter Vektor (Einfach)
     }

@@ -41,6 +41,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import javafx.util.StringConverter;
 
 // Preferences
+import java.util.Map;
 import java.util.Set;
 import java.util.prefs.Preferences;
 
@@ -3020,10 +3021,11 @@ public class JavaFx extends Application {
 
 
     private Tab buildConcentrationsTab() {
-        Label title = new Label("Konzentrationen – Dateien");
-        title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        // --- Titel ---
+        Label title = new Label("Konzentrations-Dateien");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
 
-        // Liste (nur Dateinamen)
+        // --- Liste der eingelesenen Dateien ---
         ListView<java.nio.file.Path> list = new ListView<>(concPaths);
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         list.setCellFactory(lv -> new ListCell<>() {
@@ -3032,95 +3034,150 @@ public class JavaFx extends Application {
                 setText(empty || p == null ? null : p.getFileName().toString());
             }
         });
-        // Doppelklick -> Popup/Table-Viewer (falls du den schon hast)
-        list.setOnMouseClicked(ev -> {
-            if (ev.getClickCount() == 2) {
+
+        // Doppel-Klick -> Popup mit Tabellen-Tabs für die selektierten Dateien
+        list.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2 && !list.getSelectionModel().isEmpty()) {
                 var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
-                if (sel.isEmpty()) {
-                    var one = list.getSelectionModel().getSelectedItem();
-                    if (one != null) sel.add(one);
-                }
-                if (!sel.isEmpty()) openConcPopup(sel, list.getScene()!=null ? list.getScene().getWindow() : null);
+                Window w = list.getScene() != null ? list.getScene().getWindow() : null;
+                openConcPopup(sel, w);
             }
         });
-        // Drag & Drop
+
+        // Drag & Drop (Mehrfach)
         list.setOnDragOver(ev -> {
-            var db = ev.getDragboard();
-            if (db.hasFiles() && db.getFiles().stream().anyMatch(f -> isSupported(f.toPath()))) {
-                ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
-            }
+            if (ev.getDragboard().hasFiles()) ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
             ev.consume();
         });
         list.setOnDragDropped(ev -> {
             var db = ev.getDragboard();
-            boolean ok = false;
+            boolean success = false;
             if (db.hasFiles()) {
-                addFiles(db.getFiles().stream().map(java.io.File::toPath).toList());
-                ok = true;
+                for (java.io.File f : db.getFiles()) {
+                    String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+                    if (n.endsWith(".asr") || n.endsWith(".fit")) {
+                        java.nio.file.Path p = f.toPath();
+                        if (!concPaths.contains(p)) concPaths.add(p);
+                    }
+                }
+                success = true;
             }
-            ev.setDropCompleted(ok);
+            ev.setDropCompleted(success);
             ev.consume();
         });
 
-        // Buttons oben
-        Button btnAdd    = new Button("Dateien hinzufügen…");
-        Button btnOpen   = new Button("Öffnen (Tabelle)");
-        Button btnRemove = new Button("Entfernen");
-        Button btnClear  = new Button("Leeren");
+        // --- Controls: Dateien hinzufügen/öffnen/entfernen/leeren ---
+        Button btnAdd = new Button("Add…");
+        btnAdd.setOnAction(e -> {
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("Dateien wählen");
+            fc.getExtensionFilters().addAll(
+                    new javafx.stage.FileChooser.ExtensionFilter("ASR/FIT", "*.asr", "*.ASR", "*.fit", "*.FIT"),
+                    new javafx.stage.FileChooser.ExtensionFilter("Alle Dateien", "*.*")
+            );
+            var owner = list.getScene() != null ? list.getScene().getWindow() : null;
+            var chosen = fc.showOpenMultipleDialog(owner);
+            if (chosen != null) {
+                for (var f : chosen) {
+                    var p = f.toPath();
+                    if (!concPaths.contains(p)) concPaths.add(p);
+                }
+            }
+        });
 
-        btnAdd.setOnAction(e -> chooseAndAddFiles(btnAdd.getScene()!=null ? btnAdd.getScene().getWindow() : null));
+        Button btnOpen = new Button("Öffnen");
+        btnOpen.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
         btnOpen.setOnAction(e -> {
             var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
-            if (sel.isEmpty()) {
-                var one = list.getSelectionModel().getSelectedItem();
-                if (one != null) sel.add(one);
-            }
-            if (!sel.isEmpty()) openConcPopup(sel, list.getScene()!=null ? list.getScene().getWindow() : null);
+            if (sel.isEmpty()) return;
+            Window w = list.getScene() != null ? list.getScene().getWindow() : null;
+            openConcPopup(sel, w);
         });
+
+        Button btnRemove = new Button("Entfernen");
+        btnRemove.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
         btnRemove.setOnAction(e -> {
             var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
             concPaths.removeAll(sel);
         });
+
+        Button btnClear = new Button("Clear");
+        btnClear.disableProperty().bind(Bindings.isEmpty(concPaths));
         btnClear.setOnAction(e -> concPaths.clear());
 
         HBox controls = new HBox(8, btnAdd, btnOpen, new Separator(), btnRemove, btnClear);
         controls.setAlignment(Pos.CENTER_LEFT);
 
-        // --- NUR ComboBox unter der Liste (Tabelle entfällt) ---
+        // --- Auswahl unter der Liste (wie bei Tube-Model): Datei-Combo + Anzeigen ---
         Label selLbl = new Label("Datei-Auswahl:");
-        ComboBox<java.nio.file.Path> cboFile = new ComboBox<>(concPaths);
-
-        // Anzeige nur Dateiname
+        concFileCombo = new ComboBox<>(concPaths);
+        // hübsche Anzeige (nur Dateiname)
         javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
             @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
                 super.updateItem(p, empty);
                 setText(empty || p == null ? null : p.getFileName().toString());
             }
         };
-        cboFile.setCellFactory(pathCellFactory);
-        cboFile.setButtonCell(pathCellFactory.call(null));
-        cboFile.setPrefWidth(320);
+        concFileCombo.setCellFactory(pathCellFactory);
+        concFileCombo.setButtonCell(pathCellFactory.call(null));
+        concFileCombo.setPrefWidth(320);
 
         Button btnShowSelected = new Button("Anzeigen");
+        btnShowSelected.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
         btnShowSelected.setOnAction(e -> {
-            var p = cboFile.getValue();
-            if (p != null) openConcPopup(java.util.List.of(p), cboFile.getScene()!=null ? cboFile.getScene().getWindow() : null);
+            var p = concFileCombo.getValue();
+            if (p != null) {
+                Window w = concFileCombo.getScene() != null ? concFileCombo.getScene().getWindow() : null;
+                openConcPopup(java.util.List.of(p), w);
+            }
         });
 
-        // deaktivieren, wenn leer/keine Auswahl
-        cboFile.disableProperty().bind(Bindings.isEmpty(concPaths));
-        btnShowSelected.disableProperty().bind(Bindings.isNull(cboFile.valueProperty()));
+        // --- Berechnungsteil (ohne/mit Dark) ---
+        Button btnCalc = new Button("Berechnen");
+        btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
+        btnCalc.setOnAction(e -> runConcCalculation());
 
-        HBox underList = new HBox(10, selLbl, cboFile, btnShowSelected);
+        chkUseDark  = new CheckBox("Dark-Matrix verwenden");
+        tfDarkZ     = new TextField();  tfDarkZ.setPromptText("Z (z.B. 21.47)"); tfDarkZ.setPrefColumnCount(8);
+        tfDarkElems = new TextField();  tfDarkElems.setPromptText("Dark-Elemente: O:0, Al:1401, …"); tfDarkElems.setPrefColumnCount(28);
+        tfDarkBinder= new TextField();  tfDarkBinder.setPromptText("Binder (optional) z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(24);
+        tfDarkBinderFrac = new TextField();
+        tfDarkBinderFrac.setPromptText("Binder-Anteil z.B. 1.04/5.52");
+        tfDarkBinderFrac.setPrefColumnCount(16);
+
+// nur aktiv wenn Dark aktiv
+        tfDarkBinderFrac.disableProperty().bind(chkUseDark.selectedProperty().not());
+
+// … in die HBox einfügen:
+        HBox underList = new HBox(10, selLbl, concFileCombo, btnShowSelected, new Separator(), btnCalc,
+                chkUseDark, tfDarkZ, tfDarkElems, tfDarkBinder, tfDarkBinderFrac);
         underList.setAlignment(Pos.CENTER_LEFT);
 
-        // Layout: einfacher Stack
-        VBox root = new VBox(10, title, controls, list, underList);
-        root.setPadding(new Insets(14));
-        VBox.setVgrow(list, Priority.ALWAYS); // <— wichtig: Liste wächst mit
 
-        return new Tab("Konzentrationen", root);
+        // Dark-UI nur aktiv, wenn angehakt
+        tfDarkZ.disableProperty().bind(chkUseDark.selectedProperty().not());
+        tfDarkElems.disableProperty().bind(chkUseDark.selectedProperty().not());
+        tfDarkBinder.disableProperty().bind(chkUseDark.selectedProperty().not());
+
+        // Ergebnis-Ausgabe
+        taConcOutput = new TextArea();
+        taConcOutput.setEditable(false);
+        taConcOutput.setPrefRowCount(12);
+
+
+
+
+        // --- Layout ---
+        VBox left = new VBox(10, title, controls, list, new Separator(), underList, taConcOutput);
+        left.setPadding(new Insets(14));
+        VBox.setVgrow(list, Priority.ALWAYS);
+        VBox.setVgrow(taConcOutput, Priority.SOMETIMES);
+
+        // Wenn du später eine rechte Seite willst, kannst du einen SplitPane nehmen.
+        // Aktuell nur die linke Spalte als Inhalt des Tabs:
+        return new Tab("Konzentrationen", left);
     }
+
 
 
 
@@ -3184,7 +3241,7 @@ public class JavaFx extends Application {
         // 1) bevorzugt: dein Parser
         try {
             Funktionen fk = new FunktionenImpl();
-            Verbindung v = fk.parseVerbindung(f, 0.0, 1.0, 0.1, DATA_FILE);
+            Verbindung v = fk.parseVerbindung(f, globalEmin, globalEmax(), globalStep(), DATA_FILE);
             String[] syms = v.getSymbole();
             if (syms != null) {
                 java.util.Collections.addAll(out, syms);
@@ -3374,8 +3431,408 @@ public class JavaFx extends Application {
         );
     }
 
-    private void resetConcForFile(java.nio.file.Path file) { concSessionCache.remove(file); }
-    private void resetAllConc() { concSessionCache.clear(); }
+
+
+    // ComboBox im Konzentrationen-Tab (damit wir die selektierte Datei kennen)
+    private ComboBox<java.nio.file.Path> concFileCombo;
+
+    // Dark-Optionen
+    private CheckBox chkUseDark;
+    private TextField tfDarkZ;             // Z (Double)
+    private TextField tfDarkElems;         // z.B.: "O:0, Al:1401, Ti:31881"
+    private TextField tfDarkBinder;        // Binder-Formel, z.B. "1 C38H76N2O2"
+
+    // Ergebnis-Output (optional)
+    private TextArea taConcOutput;
+
+
+    private static String concKey(String element, String transition) {
+        return (element == null ? "" : element.trim()) + "|" + (transition == null ? "" : transition.trim());
+    }
+
+
+    private void runConcCalculation() {
+        var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+        if (file == null) {
+            new Alert(Alert.AlertType.INFORMATION, "Bitte eine Datei in der Auswahl wählen.").showAndWait();
+            return;
+        }
+
+        // Aktuelle (ggf. editierte) Reihen holen (Session-Cache) – Popup muss nicht offen sein
+        var rows = getOrBuildRowsForFile(file);
+        if (rows == null || rows.isEmpty()) {
+            new Alert(Alert.AlertType.INFORMATION, "Keine Datenzeilen verfügbar.").showAndWait();
+            return;
+        }
+
+        // --- 1) Aus Rows -> Elementliste + Intensitäten + Übergänge ---
+        // Ein Element kann 1 Zeile (K ODER L) haben; wir sammeln pro Element die bevorzugte Linie:
+        // - Wenn K existiert -> K
+        // - sonst, wenn L existiert -> L
+        // Intensität wird gerundet (Probe erwartet Integer-Liste)
+        java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
+        for (ConcRow r : rows) {
+            String ele = r.element.get();
+            if (ele == null || ele.isBlank()) continue;
+            String tr = (r.transition.get()==null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+            double inten = r.intensity.get();
+
+            if (inten == 0.0) continue; // deine Regel
+
+            ConcRow already = bestByElement.get(ele);
+            if (already == null) {
+                bestByElement.put(ele, r);
+            } else {
+                // K hat Vorrang vor L
+                boolean newIsK = "K".equals(tr);
+                boolean oldIsK = "K".equals(already.transition.get());
+                if (newIsK && !oldIsK) bestByElement.put(ele, r);
+            }
+        }
+
+        if (bestByElement.isEmpty()) {
+            new Alert(Alert.AlertType.INFORMATION, "Keine gültigen Intensitäten > 0 gefunden.").showAndWait();
+            return;
+        }
+
+        java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
+        java.util.List<Integer> elementInt    = new java.util.ArrayList<>();
+        java.util.List<String>  whichLine     = new java.util.ArrayList<>(); // "K" oder "L" je Element
+
+        for (String ele : elementSymbole) {
+            ConcRow r = bestByElement.get(ele);
+            whichLine.add(r.transition.get());
+            elementInt.add((int)Math.round(r.intensity.get()));
+        }
+
+        // --- 2) Allgemeine Parameter aus deinem UI lesen ---
+        double Emin = 0.0;
+        double Emax = parseOrDefault(xRayTubeVoltage, 35.0);     // kV -> als "Emax [keV]" genutzt
+        double step = parseOrDefault(energieStep, 0.01);
+
+        String dateiPfad = DATA_FILE;                            // "MCMASTER.TXT" oder Custom
+        String roehreTyp = switch (tubeModel.getValue()) {
+            case "Love & Scott" -> "lovescott";
+            default             -> "widerschwinger";
+        };
+        String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+        double alpha      = parseOrDefault(electronIncidentAngle, 20);
+        double beta       = parseOrDefault(electronTakeoffAngle, 70);
+        double fensterW   = 0;
+
+        double sigma      = parseOrDefault(sigmaConst, 1.0314);  // bei LS passt du’s ja um
+        double c2cL       = parseOrDefault(charZuContL, 1.0);
+        String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+        double raumwinkel = 1.0;
+        double I_A        = parseOrDefault(tubeCurrent, 1.0);    // mA? In deinem CalcI-Beispiel verwendest du A; ggf. umrechnen.
+        double messzeit   = parseOrDefault(measurementTime, 30);
+        double c2c        = parseOrDefault(charZuCont, 1.0);
+
+        // Detektor
+        String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+        double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+        double phiDet     = 0.0;
+        String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+        double bedeck     = 1.0;
+        double palpha     = 45, pbeta = 45; // falls du die woanders her nimmst, ersetzen
+        String detMat     = parseOrDefault(detectorMaterial, "Si");
+        double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+        double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+        // Filter-Liste – wir nehmen die aktiven Tube-Filter (Material) aus deinem Tab
+        java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
+        for (Verbindung v : tubeFilterVerbindungen) {
+            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+        }
+        if (activeTubeFilters.isEmpty()) {
+            // Neutralen Dummy (Transmission 1) nur falls CalcI null nicht mag
+            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
+            activeTubeFilters.add(dummy);
+        }
+        // Detektor-Filter ebenso
+        java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+        for (Verbindung v : detFilterVerbindungen) {
+            if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+        }
+
+        // --- 3) Probe bauen & Übergänge aktivieren ---
+        Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
+        for (int i = 0; i < elementSymbole.size(); i++) {
+            String line = whichLine.get(i);
+            if ("K".equalsIgnoreCase(line)) {
+                probe.setzeUebergangAktivFuerElementKAlpha(i);
+            } else {
+                probe.setzeUebergangAktivFuerElementLAlpha(i);
+            }
+        }
+
+        StringBuilder out = new StringBuilder();
+
+        if (chkUseDark != null && chkUseDark.isSelected()) {
+            // === DARK-MATRIX ===============================================
+
+            // 5.1 Dark-Elemente mit Verhältnissen parsen (z.B. "O:H=1:2" oder "O=1, H=2" oder "O")
+            java.util.Map<String, Double> darkWeights = parseDarkElemsWithRatios(tfDarkElems.getText());
+            // -> darkWeights sind normiert (Summe=1), Schlüssel sind Elementsymbole
+
+            // 5.2 Z lesen
+            double Z;
+            try { Z = Double.parseDouble(tfDarkZ.getText().trim().replace(',', '.')); }
+            catch (Exception ex) { Z = 0.0; }
+
+            // 5.3 Binder (optional)
+            Verbindung binder = null;
+            String binderText = (tfDarkBinder.getText()==null? "" : tfDarkBinder.getText().trim());
+            if (!binderText.isBlank()) {
+                try {
+                    Funktionen fx = new FunktionenImpl();
+                    binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
+
+                    // Binder-Anteil (z.B. "1.04/5.52")
+                    double frac = parseBinderFraction(tfDarkBinderFrac.getText());
+                    if (frac > 0) {
+                        binder.multipliziereKonzentrationen(frac);
+                    }
+                } catch (Exception ex) {
+                    new Alert(Alert.AlertType.WARNING, "Binder konnte nicht geparst werden:\n" + ex.getMessage()).showAndWait();
+                }
+            }
+
+            // 5.4 ProbeDark = Mess-Elemente + Dark-Elemente (Dark-Intensität = 0)
+            java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
+            java.util.List<Integer> darkInts = new java.util.ArrayList<>(elementInt); // bereits Integers
+
+
+            for (Map.Entry<String, Double> e : darkWeights.entrySet()) {
+                String sym = e.getKey();
+                double w   = e.getValue();
+
+                if (!darkElems.contains(sym)) {
+                    darkElems.add(sym);
+                    darkInts.add(0); // Messintensität 0
+                }
+            }
+
+
+            Probe probeDark = new Probe(darkElems, dateiPfad, Emin, Emax, step, darkInts);
+
+            // Übergänge: Mess-Linie wie oben (K/L). Bei reinen Dark-Elementen: nimm Kα.
+            for (int i = 0; i < darkElems.size(); i++) {
+                String sym = darkElems.get(i);
+                int idxInMeasured = elementSymbole.indexOf(sym);
+                if (idxInMeasured >= 0) {
+                    if ("K".equalsIgnoreCase(whichLine.get(idxInMeasured))) {
+                        probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                    } else {
+                        probeDark.setzeUebergangAktivFuerElementLAlpha(i);
+                    }
+                } else {
+                    probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                }
+            }
+
+            // 5.5 CalcIDark rechnen
+            CalcIDark calcDark = new CalcIDark(
+                    dateiPfad, probeDark, roehreTyp, roehrenMat,
+                    alpha, beta, fensterW,
+                    sigma, c2cL,
+                    rFenstMat, rFenstD_um, raumwinkel, I_A,
+                    Emin, Emax, step, messzeit, c2c,
+                    dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                    detMat, tots_um, act_mm,
+                    activeTubeFilters.isEmpty()? null : activeTubeFilters,
+                    activeDetFilters.isEmpty()?  null : activeDetFilters,
+                    binder
+            );
+
+
+            // vielleicht probleme mit size, könnte kleiner sein, wenn element schon in probe
+            double[] darkMatrix = new double[darkWeights.size()];
+            int i = 0;
+            for (double w : darkWeights.values()) {
+                darkMatrix[i++] = w;
+                //System.out.println(w);
+            }
+
+
+            double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
+
+            //StringBuilder out = new StringBuilder(taConcOutput.getText()==null? "" : taConcOutput.getText());
+            out.append("\n=== Dark / Optimum ===\n")
+                    .append(java.util.Arrays.toString(optimum)).append("\n");
+            if (taConcOutput != null) taConcOutput.setText(out.toString());
+        }
+ else {
+            // === NORMALE VARIANTE (OHNE DARK) =====================================
+            CalcI calc = new CalcI(
+                    dateiPfad, probe, roehreTyp, roehrenMat,
+                    alpha, beta, fensterW,
+                    sigma, c2cL,
+                    rFenstMat, rFenstD_um, raumwinkel, I_A,
+                    Emin, Emax, step, messzeit, c2c,
+                    dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                    detMat, tots_um, act_mm,
+                    activeTubeFilters, activeDetFilters
+            );
+
+            PreparedValues pv = calc.werteVorbereitenAlle();
+
+            // Beispielausgaben (kompakt)
+            Übergang[][] prim = calc.primaerintensitaetBerechnen(pv);
+            out.append("Primärintensitäten (aktiv):\n");
+            for (int i = 0; i < prim.length; i++) {
+                for (int j = 0; j < prim[i].length; j++) {
+                    Übergang u = prim[i][j];
+                    if (u != null && u.isAktiv() && u.getEnergy() != 0.0) {
+                        out.append(String.format(java.util.Locale.US,
+                                "Elem %d: %s→%s  E=%.4f keV  I=%g\n",
+                                i, u.getSchale_von().name(), u.getSchale_zu().name(), u.getEnergy(), u.getRate()));
+                    }
+                }
+            }
+
+            double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000);
+            out.append("\nRelative Konzentrationen [%]:\n");
+            for (int i = 0; i < relKonz.length; i++) {
+                out.append(String.format(java.util.Locale.US, "  %s: %.2f\n",
+                        elementSymbole.get(i), relKonz[i]));
+            }
+        }
+
+        if (taConcOutput != null) {
+            taConcOutput.setText(out.toString());
+        } else {
+            new Alert(Alert.AlertType.INFORMATION, out.toString()).showAndWait();
+        }
+    }
+
+
+    private void parseDarkElems(String text, java.util.List<String> elems, java.util.List<Integer> ints) {
+        elems.clear(); ints.clear();
+        if (text == null || text.isBlank()) return;
+        String s = text.trim();
+        // Split per Komma
+        for (String part : s.split(",")) {
+            String t = part.trim();
+            if (t.isEmpty()) continue;
+            // Format "Sym:Int"
+            int idx = t.indexOf(':');
+            if (idx < 0) continue;
+            String sym = t.substring(0, idx).trim();
+            String num = t.substring(idx+1).trim();
+            if (sym.isEmpty() || num.isEmpty()) continue;
+
+            // Symbol robust normalisieren: erstes groß, zweites klein (falls vorhanden)
+            if (sym.length() == 1) sym = sym.substring(0,1).toUpperCase(java.util.Locale.ROOT);
+            else if (sym.length() >= 2) sym = sym.substring(0,1).toUpperCase(java.util.Locale.ROOT) + sym.substring(1).toLowerCase(java.util.Locale.ROOT);
+
+            try {
+                int val = Integer.parseInt(num.replace("_","").replace(" ", ""));
+                elems.add(sym);
+                ints.add(val);
+            } catch (Exception ignore) {}
+        }
+    }
+
+    // Dark: Binder-Anteil (z.B. "1.04/5.52" oder "0.1884")
+    private TextField tfDarkBinderFrac;
+
+
+    /** parsedark: akzeptiert "O", "O=1", "O:1", "O:H=1:2", "O=1, H=2" usw. */
+    private static java.util.Map<String, Double> parseDarkElemsWithRatios(String text) {
+        java.util.Map<String, Double> out = new java.util.LinkedHashMap<>();
+        if (text == null || text.isBlank()) return out;
+        String s = text.trim();
+
+        // Fall 1: "O:H=1:2" -> split links/rechts vom '='
+        if (s.contains("=") && (s.contains(":") || s.contains(","))) {
+            String[] parts = s.split("=");
+            if (parts.length == 2) {
+                String left = parts[0].trim();   // "O:H" oder "O, H"
+                String right = parts[1].trim();  // "1:2" oder "1,2"
+
+                String[] syms = left.split("[:;,]\\s*");
+                String[] nums = right.split("[:;,]\\s*");
+                int n = Math.min(syms.length, nums.length);
+                for (int i = 0; i < n; i++) {
+                    String sym = normalizeSym(syms[i]);
+                    Double val = safeDouble(nums[i]);
+                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
+                }
+                return normalizeWeights(out);
+            }
+        }
+
+        // Fall 2: Kommagetrennte Paare: "O=1, H=2" oder "O:1, H:2" oder "O, H"
+        for (String part : s.split(",")) {
+            String t = part.trim();
+            if (t.isEmpty()) continue;
+
+            if (t.contains("=")) {
+                String[] kv = t.split("=");
+                if (kv.length == 2) {
+                    String sym = normalizeSym(kv[0]);
+                    Double val = safeDouble(kv[1]);
+                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
+                    continue;
+                }
+            }
+            if (t.contains(":")) {
+                String[] kv = t.split(":");
+                if (kv.length == 2) {
+                    String sym = normalizeSym(kv[0]);
+                    Double val = safeDouble(kv[1]);
+                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
+                    else if (sym != null) out.merge(sym, 1.0, Double::sum);
+                    continue;
+                }
+            }
+            // nur ein Symbol -> Gewicht 1
+            String sym = normalizeSym(t);
+            if (sym != null) out.merge(sym, 1.0, Double::sum);
+        }
+        return normalizeWeights(out);
+    }
+
+    private static String normalizeSym(String s) {
+        if (s == null) return null;
+        s = s.trim();
+        if (s.isEmpty()) return null;
+        if (s.length() == 1) return s.substring(0,1).toUpperCase(java.util.Locale.ROOT);
+        return s.substring(0,1).toUpperCase(java.util.Locale.ROOT) + s.substring(1).toLowerCase(java.util.Locale.ROOT);
+    }
+    private static Double safeDouble(String s) {
+        try { return Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception e) { return null; }
+    }
+    private static java.util.Map<String, Double> normalizeWeights(java.util.Map<String, Double> in) {
+        double sum = in.values().stream().mapToDouble(Double::doubleValue).sum();
+        if (sum <= 0) return in;
+        java.util.Map<String, Double> out = new java.util.LinkedHashMap<>();
+        for (var e : in.entrySet()) out.put(e.getKey(), e.getValue() / sum);
+        return out;
+    }
+
+    /** akzeptiert "a/b" oder direkten Anteil "0.1884" */
+    private static double parseBinderFraction(String s) {
+        if (s == null || s.isBlank()) return 0.0;
+        s = s.trim();
+        if (s.contains("/")) {
+            String[] ab = s.split("/");
+            if (ab.length == 2) {
+                Double a = safeDouble(ab[0]);
+                Double b = safeDouble(ab[1]);
+                if (a != null && b != null && b != 0.0) return a / b;
+            }
+        }
+        Double v = safeDouble(s);
+        return v == null ? 0.0 : v;
+    }
+
+
+
+
 
 
 

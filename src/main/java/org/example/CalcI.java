@@ -317,7 +317,8 @@ public class CalcI {
                     Ltf[i][s][t] = LtfFlat[p++];
 
         /* ---------------------- Konstanten ---------------------------------- */
-        final double CONST = (1 / Pα) * 30.0e-2 / (4 * Math.PI * 0.5 * 0.5);
+        double CONST = (1 / Pα) * 30.0e-2 / (4 * Math.PI * 0.5 * 0.5);
+        CONST = 1.;
 
         /* --------- Summen µ_add, µ0_add, µijk_add --------------------------- */
         double[][]   μ_add      = new double[tauLen][];
@@ -453,7 +454,8 @@ public class CalcI {
                     Ltf[i][s][t] = LtfFlat[p++];
 
         // Konstanten
-        final double CONST = (1 / Pα) * 30.0e-2 / (4 * Math.PI * 0.5 * 0.5);
+        double CONST = (1 / Pα) * 30.0e-2 / (4 * Math.PI * 0.5 * 0.5);
+        CONST = 1.;
 
         // Aufsummierungen wie vorher
         double[][]   μAdd      = new double[tauLen][1];
@@ -538,6 +540,18 @@ public class CalcI {
                                         * Ω0[i][Kante_ij] * ω_ij * Det[i][index_ijk] * 0.5
                                         * Tau_ijk[i][j][index_xyz] * Kz[i] * Kz[j];
 
+
+                                int eIdx = (int) (
+                                        (Ubergangsenergie_xyz / pv.step())
+                                                - (pv.emin() / pv.step())
+                                                + 1.0
+                                );
+                                if (eIdx < 0) eIdx = 0;
+                                else if (eIdx >= tauLen) eIdx = tauLen - 1;
+                                integral *= Ltf[i][Kante_ij + 1][eIdx];
+
+//zweite ltf faktor
+
                                 countrate += integral;
 
                             }
@@ -545,7 +559,6 @@ public class CalcI {
                     }
                 }
 
-                // Rückgabe-Objekt wie gehabt
                 ret[i][index_ijk] = new Übergang(
                         Schale_von,
                         Schale_zu,

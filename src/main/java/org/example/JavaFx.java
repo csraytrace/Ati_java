@@ -97,6 +97,43 @@ public class JavaFx extends Application {
 
 
 
+
+    // --- Output-Tabelle (statt TextArea) ---
+    private TableView<java.util.Map<String, Object>> tblConcOutput;
+    private javafx.collections.ObservableList<java.util.Map<String, Object>> concOutputRows =
+            FXCollections.observableArrayList();
+
+    // Verfolgt die dynamischen Element-Spalten (Reihenfolge beibehalten)
+    private final java.util.LinkedHashSet<String> concOutputElementCols = new java.util.LinkedHashSet<>();
+
+
+
+    // Ergebnisse (berechnete Datensätze) – Namen in einer Liste, Daten pro Name als Map
+    //private final javafx.collections.ObservableList<String> concResultNames = FXCollections.observableArrayList();
+    //private final java.util.Map<String, java.util.Map<String, Object>> concOutputRowByName = new java.util.LinkedHashMap<>();
+
+    // Ergebnisse: pro Probenname eine Liste von Zeilen (Maps)
+    private final javafx.collections.ObservableList<String> concResultNames = FXCollections.observableArrayList();
+    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String, Object>>> concOutputRowsByName = new java.util.LinkedHashMap<>();
+
+
+
+    // UI-Bausteine für die Ergebnisliste
+    private ListView<String> concResultsListView;   // Liste der Ergebniseinträge
+    private VBox concResultsBox;                    // Container (Label + ListView)
+
+
+    // Ergebnisse (berechnete Datensätze): sichtbare Namen + zugehörige Datenzeile
+    private final java.util.Map<String, java.util.Map<String, Object>> concOutputRowByName = new java.util.LinkedHashMap<>();
+
+
+
+
+
+
+
+
+
     @Override
     public void start(Stage stage) {
         // ----- Menus -----
@@ -1246,7 +1283,7 @@ public class JavaFx extends Application {
                 // --------- UI bauen (einmalig) ----------
                 Label lMat = new Label("Material:");
                 Label lRho = new Label("ρ [g/cm³]:");
-                Label lD   = new Label("d [cm]:");
+                Label lD   = new Label("d [mm]:");
 
                 tfComp.setPrefColumnCount(14);
                 tfRho.setPrefColumnCount(6);
@@ -1285,7 +1322,8 @@ public class JavaFx extends Application {
 
                     String oldComp = textMap.getOrDefault(v, "");
                     String comp    = parseFormula(tfComp, oldComp.isBlank() ? "Al" : oldComp);
-                    double thCm    = parseDouble(tfTh, v.getFensterDickeCm());
+                    double thMm    = parseDouble(tfTh, v.getFensterDickeCm() * 10.0); // Default in mm
+                    double thCm    = thMm / 10.0;                                     // mm -> cm
                     double useEmin = (globalEmin <= 0 ? globalStep() : globalEmin);
 
                     try {
@@ -1343,7 +1381,9 @@ public class JavaFx extends Application {
                     if (v == null) return;
 
                     String comp = parseFormula(tfComp, textMap.getOrDefault(v, "Al"));
-                    double thCm = parseDouble(tfTh,  v.getFensterDickeCm());
+                    double thMm = parseDouble(tfTh, v.getFensterDickeCm() * 10.0); // Default in mm
+                    double thCm = thMm / 10.0;                                     // mm -> cm
+
                     double rho  = parseDouble(tfRho, v.getDichte());   // Eingabe oder Fallback
                     double useEmin = (globalEmin <= 0 ? globalStep() : globalEmin);
 
@@ -1392,8 +1432,9 @@ public class JavaFx extends Application {
                 tfTh.setOnAction(e -> {
                     Verbindung v = itemRef.get();
                     if (v != null) {
-                        double thCm = parseDouble(tfTh, v.getFensterDickeCm());
-                        v.setFensterDickeCm(thCm);
+                        double thMm = parseDouble(tfTh, v.getFensterDickeCm() * 10.0); // Default in mm
+                        v.setFensterDickeCm(thMm / 10.0);                              // mm -> cm
+
                     }
                 });
 
@@ -1425,7 +1466,8 @@ public class JavaFx extends Application {
                 String compShown = textMap.getOrDefault(v, "");
                 tfComp.setText(compShown);
                 tfRho.setText(String.valueOf(v.getDichte()));
-                tfTh.setText(String.valueOf(v.getFensterDickeCm()));
+                tfTh.setText(Double.toString(v.getFensterDickeCm() * 10.0)); // cm -> mm anzeigen
+
 
                 // Use-Status herstellen + Farbe setzen
                 boolean use = useMap.getOrDefault(v, Boolean.TRUE);
@@ -2864,11 +2906,30 @@ public class JavaFx extends Application {
 
         btnLoadProfile.setOnAction(e -> {
             String name = lstProfiles.getSelectionModel().getSelectedItem();
-            if (name == null) return;
-            var s = loadProfileFromPrefs(name);
-            s.applyToUI(this);
-            prefs.put("lastProfile", name);
+            if (name == null || name.isBlank()) return;
+
+            try {
+                var s = loadProfileFromPrefs(name);
+                s.applyToUI(this);
+                prefs.put("lastProfile", name);
+
+                Alert ok = new Alert(Alert.AlertType.INFORMATION,
+                        "Profile \"" + name + "\" has been loaded.");
+                ok.setHeaderText(null);
+                ok.setTitle("Profile Loaded");
+                var w = btnLoadProfile.getScene() != null ? btnLoadProfile.getScene().getWindow() : null;
+                if (w != null) ok.initOwner(w);
+                ok.showAndWait();
+            } catch (Exception ex) {
+                Alert err = new Alert(Alert.AlertType.ERROR,
+                        "Failed to load profile \"" + name + "\":\n" + ex.getMessage());
+                err.setHeaderText("Load Error");
+                var w = btnLoadProfile.getScene() != null ? btnLoadProfile.getScene().getWindow() : null;
+                if (w != null) err.initOwner(w);
+                err.showAndWait();
+            }
         });
+
 
         btnDeleteProfile.setOnAction(e -> {
             String name = lstProfiles.getSelectionModel().getSelectedItem();
@@ -3000,12 +3061,9 @@ public class JavaFx extends Application {
 
         // --- Liste der eingelesenen Dateien ---
         ListView<java.nio.file.Path> list = new ListView<>(concPaths);
-
-        list.setFixedCellSize(28);                                // gleichmäßige Zeilenhöhe
-        int visibleRows = 6;                                      // wie viele Zeilen ohne Scrollbar sichtbar sein sollen
-        list.setPrefHeight(visibleRows * list.getFixedCellSize() + 2);
-        list.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
-
+        list.setFixedCellSize(28);
+        list.setPrefHeight(6 * list.getFixedCellSize() + 2);
+        list.setMaxHeight(Region.USE_PREF_SIZE);
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
@@ -3014,7 +3072,7 @@ public class JavaFx extends Application {
             }
         });
 
-        // Doppel-Klick -> Popup mit Tabellen-Tabs für die selektierten Dateien
+        // Doppel-Klick -> Popup für selektierte Dateien
         list.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2 && !list.getSelectionModel().isEmpty()) {
                 var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
@@ -3023,7 +3081,7 @@ public class JavaFx extends Application {
             }
         });
 
-        // Drag & Drop (Mehrfach)
+        // Drag & Drop
         list.setOnDragOver(ev -> {
             if (ev.getDragboard().hasFiles()) ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
             ev.consume();
@@ -3045,7 +3103,7 @@ public class JavaFx extends Application {
             ev.consume();
         });
 
-        // --- Controls: Dateien hinzufügen/öffnen/entfernen/leeren ---
+        // --- Controls: Add / Open / Remove / Clear ---
         Button btnAdd = new Button("Add…");
         btnAdd.setOnAction(e -> {
             var fc = new javafx.stage.FileChooser();
@@ -3087,10 +3145,9 @@ public class JavaFx extends Application {
         HBox controls = new HBox(8, btnAdd, btnOpen, new Separator(), btnRemove, btnClear);
         controls.setAlignment(Pos.CENTER_LEFT);
 
-        // --- Auswahl unter der Liste (wie bei Tube-Model): Datei-Combo + Anzeigen ---
+        // --- Auswahl unter der Liste: Combo + Anzeigen ---
         Label selLbl = new Label("Datei-Auswahl:");
         concFileCombo = new ComboBox<>(concPaths);
-        // hübsche Anzeige (nur Dateiname)
         javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
             @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
                 super.updateItem(p, empty);
@@ -3111,45 +3168,37 @@ public class JavaFx extends Application {
             }
         });
 
-
-// --- Zeile 1: Datei-Auswahl ---
         HBox rowFile = new HBox(10, selLbl, concFileCombo, btnShowSelected);
         rowFile.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(concFileCombo, Priority.ALWAYS);
 
-
-// --- Zeile 2: Dark-Optionen (3 von 4 Inputs: Z, Binder, Binder-Anteil) ---
-
-        // --- Zeile 2: Dark-Optionen (3 Inputs) ---
+        // --- Dark-Optionen (Zeile mit 3 Inputs) ---
         chkUseDark  = new CheckBox("Dark-Matrix verwenden");
 
         Label lblZ      = new Label("Z:");
-        tfDarkZ     = new TextField();  tfDarkZ.setPromptText("z.B. 21.47"); tfDarkZ.setPrefColumnCount(8);
+        tfDarkZ         = new TextField();  tfDarkZ.setPromptText("z.B. 21.47"); tfDarkZ.setPrefColumnCount(8);
 
-        Label lblBinder = new Label("Binder:");
-        tfDarkBinder= new TextField();  tfDarkBinder.setPromptText("z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(18);
+        Label lblBinder = new Label("Binder (optional):");
+        tfDarkBinder    = new TextField();  tfDarkBinder.setPromptText("z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(18);
 
-        Label lblFrac   = new Label("Anteil:");
-        tfDarkBinderFrac = new TextField(); tfDarkBinderFrac.setPromptText("z.B. 1.04/5.52"); tfDarkBinderFrac.setPrefColumnCount(10);
+        Label lblFrac   = new Label("Anteil (optional):");
+        tfDarkBinderFrac= new TextField(); tfDarkBinderFrac.setPromptText("z.B. 1.04/5.52"); tfDarkBinderFrac.setPrefColumnCount(10);
 
         HBox rowDarkA = new HBox(10, chkUseDark, lblZ, tfDarkZ, lblBinder, tfDarkBinder, lblFrac, tfDarkBinderFrac);
         rowDarkA.setAlignment(Pos.CENTER_LEFT);
 
-// Disable-Bindings der 3 Felder per Checkbox
+        // Disable-Bindings: Felder sind aus, wenn Dark aus
         tfDarkZ.disableProperty().bind(chkUseDark.selectedProperty().not());
         tfDarkBinder.disableProperty().bind(chkUseDark.selectedProperty().not());
         tfDarkBinderFrac.disableProperty().bind(chkUseDark.selectedProperty().not());
 
-
-// --- Zeile 3: Nur Dark-Elemente ---
-// --- Zeile 3: 2-Zeilen-Raster: oben Werte, unten Element-Toggles ---
+        // --- Dark-Elemente (2-Zeilen-Raster: oben Werte, unten Buttons) ---
         darkToggles = new java.util.ArrayList<>();
         darkFields  = new java.util.ArrayList<>();
         darkGrid    = new GridPane();
         darkGrid.setHgap(8);
         darkGrid.setVgap(6);
 
-// pro Element eine Spalte
         for (int i = 0; i < DARK_ELEMS_ORDER.length; i++) {
             String sym = DARK_ELEMS_ORDER[i];
 
@@ -3160,15 +3209,9 @@ public class JavaFx extends Application {
             ToggleButton tb = new ToggleButton(sym);
             tb.setSelected(false);
 
-            // Button ist gesperrt, wenn Dark-Matrix AUS
             tb.disableProperty().bind(chkUseDark.selectedProperty().not());
+            tf.disableProperty().bind(chkUseDark.selectedProperty().not().or(tb.selectedProperty().not()));
 
-            // Feld ist gesperrt, wenn Dark-Matrix AUS ODER Button AUS
-            tf.disableProperty().bind(
-                    chkUseDark.selectedProperty().not().or(tb.selectedProperty().not())
-            );
-
-            // Komfort: beim Aktivieren und leer -> "1" einsetzen
             tb.selectedProperty().addListener((o, was, ist) -> {
                 if (ist && (tf.getText() == null || tf.getText().isBlank())) tf.setText("1");
             });
@@ -3176,13 +3219,11 @@ public class JavaFx extends Application {
             darkFields.add(tf);
             darkToggles.add(tb);
 
-            // in Grid platzieren: Zeile 0 = Werte, Zeile 1 = Button
             darkGrid.add(tf, i, 0);
             darkGrid.add(tb, i, 1);
         }
 
-
-        // --- Zeile 4: Berechnen ---
+        // --- Berechnen ---
         Button btnCalc = new Button("Berechnen");
         btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
         btnCalc.setOnAction(e -> runConcCalculation());
@@ -3190,47 +3231,51 @@ public class JavaFx extends Application {
         HBox rowActions = new HBox(10, btnCalc);
         rowActions.setAlignment(Pos.CENTER_LEFT);
 
-
-// alles zusammen als kompakter Block
+        // --- Block unterhalb der Datei-Liste ---
         VBox underList = new VBox(8, rowFile, rowDarkA, darkGrid, rowActions);
 
+        // === Results-Bereich (nur Liste, KEINE Tabelle im Tab) ===
+        Label resultsTitle = new Label("Results");
+        resultsTitle.setStyle("-fx-font-weight: bold;");
 
+        concResultsListView = new ListView<>(concResultNames);
+        concResultsListView.setPlaceholder(new Label("No results yet."));
+        concResultsListView.setPrefHeight(160);
+        concResultsListView.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                String name = concResultsListView.getSelectionModel().getSelectedItem();
+                if (name != null) {
+                    var row = concOutputRowByName.get(name);
+                    if (row != null) {
+                        // Zeigt die gewohnte Ergebnis-Tabelle im Popup
+                        openOutputPopup(java.util.List.of(name),
+                                concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null);
+                    }
+                }
+            }
+        });
 
-        // Ergebnis-Ausgabe
-        taConcOutput = new TextArea();
-        taConcOutput.setEditable(false);
-        taConcOutput.setPrefRowCount(12);
-
-
-
+        concResultsBox = new VBox(6, resultsTitle, concResultsListView);
+        concResultsBox.setPadding(new Insets(10, 0, 0, 0));
 
         // --- Layout ---
-        VBox left = new VBox(10, title, controls, list, new Separator(), underList, taConcOutput);
+        VBox left = new VBox(10,
+                title,
+                controls,
+                list,
+                new Separator(),
+                underList,
+                new Separator(),
+                concResultsBox            // << NUR die Result-Liste, KEINE Output-Tabelle mehr!
+        );
         left.setPadding(new Insets(14));
-        VBox.setVgrow(list, Priority.NEVER);
-        VBox.setVgrow(taConcOutput, Priority.NEVER);
+        VBox.setVgrow(list, Priority.ALWAYS);
 
-        // Wenn du später eine rechte Seite willst, kannst du einen SplitPane nehmen.
-        // Aktuell nur die linke Spalte als Inhalt des Tabs:
         return new Tab("Konzentrationen", left);
     }
 
 
 
-
-
-    private void chooseAndAddFiles(Window owner) {
-        var fc = new javafx.stage.FileChooser();
-        fc.setTitle("ASR/FIT-Dateien auswählen");
-        fc.getExtensionFilters().addAll(
-                new javafx.stage.FileChooser.ExtensionFilter("ASR/FIT", "*.asr", "*.fit"),
-                new javafx.stage.FileChooser.ExtensionFilter("Alle Dateien", "*.*")
-        );
-        var chosen = fc.showOpenMultipleDialog(owner);
-        if (chosen != null && !chosen.isEmpty()) {
-            addFiles(chosen.stream().map(java.io.File::toPath).toList());
-        }
-    }
 
     private void addFiles(java.util.Collection<java.nio.file.Path> paths) {
         for (var p : paths) {
@@ -3377,9 +3422,11 @@ public class JavaFx extends Application {
         }
 
 // sortieren
-        rows.sort(java.util.Comparator
-                .comparing((ConcRow r) -> r.element.get())
-                .thenComparing(r -> r.transition.get()));
+
+        rows.sort(java.util.Comparator.comparingInt(r ->
+                java.util.Arrays.asList(Elementsymbole.values())
+                        .indexOf(Elementsymbole.valueOf(r.element.get()))
+        ));
         return rows;
 
     }
@@ -3526,301 +3573,547 @@ public class JavaFx extends Application {
 
 
     private void runConcCalculation() {
-        var file = (concFileCombo == null) ? null : concFileCombo.getValue();
-        if (file == null) {
-            new Alert(Alert.AlertType.INFORMATION, "Bitte eine Datei in der Auswahl wählen.").showAndWait();
-            return;
-        }
+        try {
+            // 0) Datei ermitteln
+            var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+            if (file == null) {
+                new Alert(Alert.AlertType.INFORMATION, "Please select a file in the dropdown.").showAndWait();
+                return;
+            }
 
-        // Aktuelle (ggf. editierte) Reihen holen (Session-Cache) – Popup muss nicht offen sein
-        var rows = getOrBuildRowsForFile(file);
-        if (rows == null || rows.isEmpty()) {
-            new Alert(Alert.AlertType.INFORMATION, "Keine Datenzeilen verfügbar.").showAndWait();
-            return;
-        }
+            // 1) Aktuelle (ggf. editierte) Zeilen holen
+            var rows = getOrBuildRowsForFile(file);
+            if (rows == null || rows.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION, "No data rows available.").showAndWait();
+                return;
+            }
 
-        // --- 1) Aus Rows -> Elementliste + Intensitäten + Übergänge ---
-        // Ein Element kann 1 Zeile (K ODER L) haben; wir sammeln pro Element die bevorzugte Linie:
-        // - Wenn K existiert -> K
-        // - sonst, wenn L existiert -> L
-        // Intensität wird gerundet (Probe erwartet Integer-Liste)
-        java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
-        for (ConcRow r : rows) {
-            if (r == null) continue;
-            if (!r.enabled.get()) continue;         // NEW: nur true verwenden
-            if (!(r.intensity.get() > 0.0)) continue;
-            double inten = r.intensity.get();
-            if (!(inten > 0.0)) continue;           // 0 ignorieren
+            // 2) Pro Element beste Zeile wählen (nur enabled, intensity>0; K bevorzugt)
+            java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
+            for (ConcRow r : rows) {
+                if (r == null || !r.enabled.get()) continue;
+                String ele = r.element.get();
+                if (ele == null || ele.isBlank()) continue;
 
-            String ele = r.element.get();
-            if (ele == null || ele.isBlank()) continue;
-            String tr = (r.transition.get()==null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+                String tr = (r.transition.get() == null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+                double inten = r.intensity.get();
+                if (!(inten > 0.0)) continue;
 
-            ConcRow already = bestByElement.get(ele);
-            if (already == null) {
-                bestByElement.put(ele, r);
-            } else {
-                boolean newIsK = "K".equals(tr);
-                boolean oldIsK = "K".equals(already.transition.get());
-                if (newIsK && !oldIsK) bestByElement.put(ele, r); // K schlägt L
-                    // wenn beides K oder beides L: nimm die größere Intensität
-                else if (newIsK == oldIsK && inten > already.intensity.get()) {
+                ConcRow already = bestByElement.get(ele);
+                if (already == null) {
                     bestByElement.put(ele, r);
-                }
-            }
-        }
-
-        if (bestByElement.isEmpty()) {
-            new Alert(Alert.AlertType.INFORMATION, "Keine aktivierten Zeilen mit Intensität > 0 gefunden.").showAndWait();
-            return;
-        }
-
-        java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
-        java.util.List<Integer> elementInt    = new java.util.ArrayList<>();
-        java.util.List<String>  whichLine     = new java.util.ArrayList<>(); // "K" oder "L" je Element
-
-        for (String ele : elementSymbole) {
-            ConcRow r = bestByElement.get(ele);
-            whichLine.add(r.transition.get());
-            elementInt.add((int)Math.round(r.intensity.get()));
-        }
-
-        // --- 2) Allgemeine Parameter aus deinem UI lesen ---
-        double Emin = 0.0;
-        double Emax = parseOrDefault(xRayTubeVoltage, 35.0);     // kV -> als "Emax [keV]" genutzt
-        double step = parseOrDefault(energieStep, 0.01);
-
-        String dateiPfad = DATA_FILE;                            // "MCMASTER.TXT" oder Custom
-        String roehreTyp = switch (tubeModel.getValue()) {
-            case "Love & Scott" -> "lovescott";
-            default             -> "widerschwinger";
-        };
-        String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
-        double alpha      = parseOrDefault(electronIncidentAngle, 20);
-        double beta       = parseOrDefault(electronTakeoffAngle, 70);
-        double fensterW   = 0;
-
-        double sigma      = parseOrDefault(sigmaConst, 1.0314);  // bei LS passt du’s ja um
-        double c2cL       = parseOrDefault(charZuContL, 1.0);
-        String rFenstMat  = parseOrDefault(windowMaterial, "Be");
-        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
-        double raumwinkel = 1.0;
-        double I_A        = parseOrDefault(tubeCurrent, 1.0);    // mA? In deinem CalcI-Beispiel verwendest du A; ggf. umrechnen.
-        double messzeit   = parseOrDefault(measurementTime, 30);
-        double c2c        = parseOrDefault(charZuCont, 1.0);
-
-        // Detektor
-        String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
-        double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
-        double phiDet     = 0.0;
-        String kontaktMat = parseOrDefault(contactlayerDet, "Au");
-        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
-        double bedeck     = 1.0;
-        double palpha     = 45, pbeta = 45; // falls du die woanders her nimmst, ersetzen
-        String detMat     = parseOrDefault(detectorMaterial, "Si");
-        double tots_um    = parseOrDefault(inactiveLayer, 0.05);
-        double act_mm     = parseOrDefault(activeLayer, 3.0);
-
-        // Filter-Liste – wir nehmen die aktiven Tube-Filter (Material) aus deinem Tab
-        java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
-        for (Verbindung v : tubeFilterVerbindungen) {
-            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
-        }
-        if (activeTubeFilters.isEmpty()) {
-            // Neutralen Dummy (Transmission 1) nur falls CalcI null nicht mag
-            Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
-            activeTubeFilters.add(dummy);
-        }
-        // Detektor-Filter ebenso
-        java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
-        for (Verbindung v : detFilterVerbindungen) {
-            if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
-        }
-
-        // --- 3) Probe bauen & Übergänge aktivieren ---
-        Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
-        for (int i = 0; i < elementSymbole.size(); i++) {
-            String line = whichLine.get(i);
-            if ("K".equalsIgnoreCase(line)) {
-                probe.setzeUebergangAktivFuerElementKAlpha(i);
-            } else {
-                probe.setzeUebergangAktivFuerElementLAlpha(i);
-            }
-        }
-
-        StringBuilder out = new StringBuilder();
-
-        if (chkUseDark != null && chkUseDark.isSelected()) {
-            // 1) Require Z
-            String zText = tfDarkZ.getText();
-            Double zVal = null;
-            if (zText != null && !zText.trim().isBlank()) {
-                try { zVal = Double.parseDouble(zText.trim().replace(',', '.')); } catch (NumberFormatException ignore) {}
-            }
-            if (zVal == null) {
-                // markFieldError(tfDarkZ);
-                new Alert(Alert.AlertType.INFORMATION,
-                        "Please enter a valid Z value before using the dark matrix."
-                ).showAndWait();
-                return;
-            }
-            double Z = zVal;
-
-            // 2) Collect dark elements
-            java.util.Map<String, Double> darkWeights = collectDarkWeightsFromUI();
-            if (darkWeights.isEmpty()) {
-                new Alert(Alert.AlertType.INFORMATION,
-                        "Please enable at least one dark element and enter a value > 0."
-                ).showAndWait();
-                return;
-            }
-
-            // 3) Binder: require fraction if binder is set
-            Verbindung binder = null;
-            String binderText = (tfDarkBinder.getText()==null ? "" : tfDarkBinder.getText().trim());
-            if (!binderText.isBlank()) {
-                String fracText = tfDarkBinderFrac.getText();
-                // a) Any fraction entered?
-                if (fracText == null || fracText.trim().isBlank()) {
-                    // markFieldError(tfDarkBinderFrac);
-                    new Alert(Alert.AlertType.INFORMATION,
-                            "Binder is specified but no fraction was provided.\n" +
-                                    "Please enter a valid fraction (e.g., 1.04/5.52 or 0.1884)."
-                    ).showAndWait();
-                    return;
-                }
-                // b) Fraction parseable and > 0?
-                double frac = parseBinderFraction(fracText);
-                if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac)) {
-                    // markFieldError(tfDarkBinderFrac);
-                    new Alert(Alert.AlertType.INFORMATION,
-                            "Invalid binder fraction.\n" +
-                                    "Allowed formats: 1.04/5.52 or 0.1884 (must be > 0)."
-                    ).showAndWait();
-                    return;
-                }
-
-                try {
-                    Funktionen fx = new FunktionenImpl();
-                    binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
-                    binder.multipliziereKonzentrationen(frac);
-                    // clearFieldError(tfDarkBinderFrac);
-                } catch (Exception ex) {
-                    new Alert(Alert.AlertType.WARNING,
-                            "Failed to parse binder:\n" + ex.getMessage()
-                    ).showAndWait();
-                    return;
-                }
-            }
-
-
-            // 5.4 ProbeDark = Mess-Elemente + Dark-Elemente (Dark-Intensität = 0)
-            java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
-            java.util.List<Integer> darkInts = new java.util.ArrayList<>(elementInt); // bereits Integers
-
-
-            for (Map.Entry<String, Double> e : darkWeights.entrySet()) {
-                String sym = e.getKey();
-                double w   = e.getValue();
-
-                if (!darkElems.contains(sym)) {
-                    darkElems.add(sym);
-                    darkInts.add(0); // Messintensität 0
-                }
-            }
-
-
-            Probe probeDark = new Probe(darkElems, dateiPfad, Emin, Emax, step, darkInts);
-
-            // Übergänge: Mess-Linie wie oben (K/L). Bei reinen Dark-Elementen: nimm Kα.
-            for (int i = 0; i < darkElems.size(); i++) {
-                String sym = darkElems.get(i);
-                int idxInMeasured = elementSymbole.indexOf(sym);
-                if (idxInMeasured >= 0) {
-                    if ("K".equalsIgnoreCase(whichLine.get(idxInMeasured))) {
-                        probeDark.setzeUebergangAktivFuerElementKAlpha(i);
-                    } else {
-                        probeDark.setzeUebergangAktivFuerElementLAlpha(i);
-                    }
                 } else {
-                    probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                    boolean newIsK = "K".equals(tr);
+                    boolean oldIsK = "K".equals(already.transition.get());
+                    if (newIsK && !oldIsK) bestByElement.put(ele, r);
                 }
             }
 
-            // 5.5 CalcIDark rechnen
-            CalcIDark calcDark = new CalcIDark(
-                    dateiPfad, probeDark, roehreTyp, roehrenMat,
-                    alpha, beta, fensterW,
-                    sigma, c2cL,
-                    rFenstMat, rFenstD_um, raumwinkel, I_A,
-                    Emin, Emax, step, messzeit, c2c,
-                    dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
-                    detMat, tots_um, act_mm,
-                    activeTubeFilters.isEmpty()? null : activeTubeFilters,
-                    activeDetFilters.isEmpty()?  null : activeDetFilters,
-                    binder
-            );
-
-
-            // vielleicht probleme mit size, könnte kleiner sein, wenn element schon in probe
-            double[] darkMatrix = new double[darkWeights.size()];
-            int i = 0;
-            for (double w : darkWeights.values()) {
-                darkMatrix[i++] = w;
-                //System.out.println(w);
+            if (bestByElement.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION, "No valid enabled intensities > 0 found.").showAndWait();
+                return;
             }
 
+            java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
+            java.util.List<Integer> elementInt    = new java.util.ArrayList<>();
+            java.util.List<String>  whichLine     = new java.util.ArrayList<>();
+            for (String ele : elementSymbole) {
+                ConcRow r = bestByElement.get(ele);
+                whichLine.add(r.transition.get());
+                elementInt.add((int)Math.round(r.intensity.get()));
+            }
 
-            double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
+            // 3) UI-Parameter
+            double Emin = 0.0;
+            double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+            double step = parseOrDefault(energieStep, 0.01);
+            String dateiPfad = DATA_FILE;
 
-            //StringBuilder out = new StringBuilder(taConcOutput.getText()==null? "" : taConcOutput.getText());
-            out.append("\n=== Dark / Optimum ===\n")
-                    .append(java.util.Arrays.toString(optimum)).append("\n");
-            if (taConcOutput != null) taConcOutput.setText(out.toString());
-        }
- else {
-            // === NORMALE VARIANTE (OHNE DARK) =====================================
-            CalcI calc = new CalcI(
-                    dateiPfad, probe, roehreTyp, roehrenMat,
-                    alpha, beta, fensterW,
-                    sigma, c2cL,
-                    rFenstMat, rFenstD_um, raumwinkel, I_A,
-                    Emin, Emax, step, messzeit, c2c,
-                    dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
-                    detMat, tots_um, act_mm,
-                    activeTubeFilters, activeDetFilters
-            );
+            String roehreTyp = switch (tubeModel.getValue()) {
+                case "Love & Scott" -> "lovescott";
+                default             -> "widerschwinger";
+            };
+            String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+            double alpha      = parseOrDefault(electronIncidentAngle, 20);
+            double beta       = parseOrDefault(electronTakeoffAngle, 70);
+            double fensterW   = 0.0;
 
-            PreparedValues pv = calc.werteVorbereitenAlle();
+            double sigma      = parseOrDefault(sigmaConst, 1.0314);
+            double c2cL       = parseOrDefault(charZuContL, 1.0);
+            String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+            double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+            double raumwinkel = 1.0;
+            double I_A        = parseOrDefault(tubeCurrent, 1.0);
+            double messzeit   = parseOrDefault(measurementTime, 30);
+            double c2c        = parseOrDefault(charZuCont, 1.0);
 
-            // Beispielausgaben (kompakt)
-            Übergang[][] prim = calc.primaerintensitaetBerechnen(pv);
-            out.append("Primärintensitäten (aktiv):\n");
-            for (int i = 0; i < prim.length; i++) {
-                for (int j = 0; j < prim[i].length; j++) {
-                    Übergang u = prim[i][j];
-                    if (u != null && u.isAktiv() && u.getEnergy() != 0.0) {
-                        out.append(String.format(java.util.Locale.US,
-                                "Elem %d: %s→%s  E=%.4f keV  I=%g\n",
-                                i, u.getSchale_von().name(), u.getSchale_zu().name(), u.getEnergy(), u.getRate()));
+            // Detektor
+            String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+            double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+            double phiDet     = 0.0;
+            String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+            double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+            double bedeck     = 1.0;
+            double palpha     = 45, pbeta = 45;
+            String detMat     = parseOrDefault(detectorMaterial, "Si");
+            double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+            double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+            // aktive Filter
+            java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
+            for (Verbindung v : tubeFilterVerbindungen) if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+            if (activeTubeFilters.isEmpty()) {
+                Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
+                activeTubeFilters.add(dummy);
+            }
+            java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+            for (Verbindung v : detFilterVerbindungen) if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+
+            // 4) Probe + Übergänge
+            Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
+            for (int i = 0; i < elementSymbole.size(); i++) {
+                if ("K".equalsIgnoreCase(whichLine.get(i))) probe.setzeUebergangAktivFuerElementKAlpha(i);
+                else                                        probe.setzeUebergangAktivFuerElementLAlpha(i);
+            }
+
+            // 5) Ergebnis-Name (Dateiname, bei Bedarf (2), (3), …)
+            String baseName = file.getFileName().toString();
+            String uniqueName = baseName;
+            int dup = 2;
+            while (concResultNames.contains(uniqueName)) uniqueName = baseName + " (" + dup++ + ")";
+
+            // 6) Rechnen
+            if (chkUseDark != null && chkUseDark.isSelected()) {
+                // a) Z prüfen
+                String zText = tfDarkZ.getText();
+                Double zVal = null;
+                if (zText != null && !zText.trim().isBlank()) {
+                    try { zVal = Double.parseDouble(zText.trim().replace(',', '.')); } catch (NumberFormatException ignore) {}
+                }
+                if (zVal == null) {
+                    new Alert(Alert.AlertType.INFORMATION,
+                            "Please enter a valid Z value before using the dark matrix."
+                    ).showAndWait();
+                    return;
+                }
+                double Z = zVal;
+
+                // b) Dark-Elemente prüfen
+                java.util.Map<String, Double> darkWeights = collectDarkWeightsFromUI();
+                if (darkWeights.isEmpty()) {
+                    new Alert(Alert.AlertType.INFORMATION,
+                            "Please enable at least one dark element and enter a value > 0."
+                    ).showAndWait();
+                    return;
+                }
+
+                // c) Binder (falls gesetzt -> Anteil Pflicht)
+                Verbindung binder = null;
+                String binderText = (tfDarkBinder.getText() == null ? "" : tfDarkBinder.getText().trim());
+                if (!binderText.isBlank()) {
+                    String fracText = tfDarkBinderFrac.getText();
+                    if (fracText == null || fracText.trim().isBlank()) {
+                        new Alert(Alert.AlertType.INFORMATION,
+                                "Binder is set but no fraction was provided.\n" +
+                                        "Please enter a valid fraction (e.g., 1.04/5.52 or 0.1884)."
+                        ).showAndWait();
+                        return;
+                    }
+                    double frac = parseBinderFraction(fracText);
+                    if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac)) {
+                        new Alert(Alert.AlertType.INFORMATION,
+                                "Invalid binder fraction.\n" +
+                                        "Allowed formats are like 1.04/5.52 or 0.1884 (must be > 0)."
+                        ).showAndWait();
+                        return;
+                    }
+                    try {
+                        Funktionen fx = new FunktionenImpl();
+                        binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
+                        binder.multipliziereKonzentrationen(frac);
+                    } catch (Exception ex) {
+                        new Alert(Alert.AlertType.WARNING, "Binder could not be parsed:\n" + ex.getMessage()).showAndWait();
+                        return;
                     }
                 }
+
+                // Dark-Probe (Mess-Elemente + Dark-Elemente (0-Intensität, falls neu))
+                java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
+                java.util.List<Integer> darkInts = new java.util.ArrayList<>(elementInt);
+                for (var e : darkWeights.entrySet()) {
+                    if (!darkElems.contains(e.getKey())) { darkElems.add(e.getKey()); darkInts.add(0); }
+                }
+                Probe probeDark = new Probe(darkElems, dateiPfad, Emin, Emax, step, darkInts);
+                for (int i = 0; i < darkElems.size(); i++) {
+                    String sym = darkElems.get(i);
+                    int idx = elementSymbole.indexOf(sym);
+                    if (idx >= 0) {
+                        if ("K".equalsIgnoreCase(whichLine.get(idx))) probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                        else                                          probeDark.setzeUebergangAktivFuerElementLAlpha(i);
+                    } else {
+                        probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                    }
+                }
+
+                // Rechenklasse
+                CalcIDark calcDark = new CalcIDark(
+                        dateiPfad, probeDark, roehreTyp, roehrenMat,
+                        alpha, beta, fensterW,
+                        sigma, c2cL,
+                        rFenstMat, rFenstD_um, raumwinkel, I_A,
+                        Emin, Emax, step, messzeit, c2c,
+                        dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                        detMat, tots_um, act_mm,
+                        activeTubeFilters.isEmpty() ? null : activeTubeFilters,
+                        activeDetFilters.isEmpty()  ? null : activeDetFilters,
+                        binder
+                );
+
+                // >>>> HIER: Deine echte Optimierung aufrufen und die finalen Größen holen
+                // Platzhalter:
+                java.util.List<Element> elems = probeDark.getElemente();
+                int n = elems.size();
+                int[] zNumbersArr = probeDark.getElementZNumbers().stream().mapToInt(Integer::intValue).toArray();
+                double[] gesamtKonz = new double[n]; // TODO: durch echte Resultate ersetzen
+                double z_mittel_opt = Z;             // TODO: ersetzen
+                double geo          = 1.0;           // TODO: ersetzen
+
+                // Ergebnis-Zeile (nach Z sortiert)
+                java.util.Map<String,Object> rowDark = new java.util.LinkedHashMap<>();
+                rowDark.put("Name", uniqueName);
+                Integer[] order = new Integer[n];
+                for (int i = 0; i < n; i++) order[i] = i;
+                java.util.Arrays.sort(order, java.util.Comparator.comparingInt(i -> zNumbersArr[i]));
+                for (int idx : order) {
+                    String sym = elems.get(idx).getSymbol();
+                    double pct = gesamtKonz[idx] * 100.0;
+                    rowDark.put(sym, pct);
+                }
+                rowDark.put("Z", z_mittel_opt);
+                rowDark.put("Geo", geo);
+
+                // registrieren/aktualisieren
+                concOutputRowByName.put(uniqueName, rowDark);
+                concResultNames.add(uniqueName);
+
+            } else {
+                // --- NORMAL ---
+                CalcI calc = new CalcI(
+                        dateiPfad, probe, roehreTyp, roehrenMat,
+                        alpha, beta, fensterW,
+                        sigma, c2cL,
+                        rFenstMat, rFenstD_um, raumwinkel, I_A,
+                        Emin, Emax, step, messzeit, c2c,
+                        dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                        detMat, tots_um, act_mm,
+                        activeTubeFilters, activeDetFilters
+                );
+
+                PreparedValues pv = calc.werteVorbereitenAlle();
+                double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000); // [%]
+
+                java.util.Map<String,Object> rowOut = new java.util.LinkedHashMap<>();
+                rowOut.put("Name", uniqueName);
+
+                // Spalten alphabetisch nach Symbol
+                java.util.List<String> syms = new java.util.ArrayList<>(elementSymbole);
+                java.util.Collections.sort(syms, String.CASE_INSENSITIVE_ORDER);
+                for (String sym : syms) {
+                    int idx = elementSymbole.indexOf(sym);
+                    if (idx >= 0 && idx < relKonz.length) rowOut.put(sym, relKonz[idx]);
+                }
+
+                concOutputRowByName.put(uniqueName, rowOut);
+                concResultNames.add(uniqueName);
             }
 
-            double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000);
-            out.append("\nRelative Konzentrationen [%]:\n");
-            for (int i = 0; i < relKonz.length; i++) {
-                out.append(String.format(java.util.Locale.US, "  %s: %.2f\n",
-                        elementSymbole.get(i), relKonz[i]));
+            // 7) UI: Result-Liste aktualisieren + den neuen Eintrag auswählen
+            if (concResultsListView != null) {
+                concResultsListView.refresh();
+                concResultsListView.getSelectionModel().select(concResultNames.size() - 1);
+                concResultsListView.scrollTo(concResultNames.size() - 1);
             }
-        }
 
-        if (taConcOutput != null) {
-            taConcOutput.setText(out.toString());
-        } else {
-            new Alert(Alert.AlertType.INFORMATION, out.toString()).showAndWait();
+        } catch (Throwable ex) {
+            ex.printStackTrace();
+            new Alert(Alert.AlertType.ERROR,
+                    "Unexpected error in runConcCalculation():\n" + ex.getClass().getSimpleName() + ": " + ex.getMessage()
+            ).showAndWait();
         }
     }
+
+
+
+
+    private static void addIfNonNull(javafx.scene.layout.Pane parent, javafx.scene.Node... nodes) {
+        for (javafx.scene.Node n : nodes) {
+            if (n != null) parent.getChildren().add(n);
+        }
+    }
+
+    /** Baut die Spalten der Ergebnis-Tabelle (Name, Elemente, Z, Geo) neu auf. */
+    private void rebuildColumns() {
+        // Basis-Spalten sicherstellen
+        ensureBaseColumns();
+
+        // Alle Element-Spalten einsammeln: zuerst die explizit gemerkten,
+        // dann alles, was in den vorhandenen Datenzeilen als Element-Key auftaucht.
+        java.util.Set<String> allElems = new java.util.LinkedHashSet<>(concOutputElementCols);
+
+        // Falls du eine Sammelliste der sichtbaren Zeilen hast:
+        for (java.util.Map<String, Object> row : concOutputRows) {
+            for (String k : row.keySet()) {
+                if (k != null && k.matches("[A-Z][a-z]?")) {
+                    allElems.add(k);
+                }
+            }
+        }
+
+        // Spalten für alle gefundenen Elemente anlegen (falls noch nicht vorhanden)
+        ensureElementColumns(allElems);
+
+        // Tabelle auffrischen
+        if (tblConcOutput != null) {
+            tblConcOutput.refresh();
+        }
+    }
+
+
+
+
+
+    /** erstellt die Basisspalten (Name, Z, Geo), falls noch nicht vorhanden */
+    private void ensureBaseColumns() {
+        if (tblConcOutput.getColumns().isEmpty()) {
+            // Name (String)
+            TableColumn<java.util.Map<String, Object>, String> cName = new TableColumn<>("Name");
+            cName.setCellValueFactory(param -> {
+                Object v = param.getValue().getOrDefault("Name", "");
+                return new javafx.beans.property.SimpleStringProperty(v == null ? "" : v.toString());
+            });
+            cName.setCellFactory(TextFieldTableCell.forTableColumn());
+            cName.setOnEditCommit(ev -> ev.getRowValue().put("Name", ev.getNewValue()));
+            cName.setPrefWidth(180);
+
+            // Z (Double)
+            TableColumn<java.util.Map<String, Object>, String> cZ = new TableColumn<>("Z");
+            cZ.setCellValueFactory(param -> {
+                Object v = param.getValue().get("Z");
+                String s = (v == null) ? "" : String.valueOf(v);
+                return new javafx.beans.property.SimpleStringProperty(s);
+            });
+            cZ.setCellFactory(TextFieldTableCell.forTableColumn());
+            cZ.setOnEditCommit(ev -> {
+                String s = ev.getNewValue();
+                Double d = null;
+                try { if (s != null && !s.isBlank()) d = Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception ignore) {}
+                ev.getRowValue().put("Z", d); // null erlaubt
+            });
+            cZ.setPrefWidth(80);
+
+            // Geo (String)
+            TableColumn<java.util.Map<String, Object>, String> cGeo = new TableColumn<>("Geo");
+            cGeo.setCellValueFactory(param -> {
+                Object v = param.getValue().getOrDefault("Geo", "");
+                return new javafx.beans.property.SimpleStringProperty(v == null ? "" : v.toString());
+            });
+            cGeo.setCellFactory(TextFieldTableCell.forTableColumn());
+            cGeo.setOnEditCommit(ev -> ev.getRowValue().put("Geo", ev.getNewValue()));
+            cGeo.setPrefWidth(120);
+
+            tblConcOutput.getColumns().addAll(cName, cZ, cGeo);
+        }
+    }
+
+    /** legt eine (Double-)Elementspalte an, falls noch nicht vorhanden */
+    private void ensureElementColumn(String elementSymbol) {
+        if (elementSymbol == null || elementSymbol.isBlank()) return;
+        if (concOutputElementCols.contains(elementSymbol)) return;
+
+        concOutputElementCols.add(elementSymbol);
+
+        TableColumn<java.util.Map<String, Object>, String> c = new TableColumn<>(elementSymbol);
+        c.setCellValueFactory(param -> {
+            Object v = param.getValue().get(elementSymbol);
+            String s = (v == null) ? "" : String.valueOf(v);
+            return new javafx.beans.property.SimpleStringProperty(s);
+        });
+        c.setCellFactory(TextFieldTableCell.forTableColumn());
+        c.setOnEditCommit(ev -> {
+            String s = ev.getNewValue();
+            Double d = null;
+            try { if (s != null && !s.isBlank()) d = Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception ignore) {}
+            ev.getRowValue().put(elementSymbol, d); // null erlaubt
+        });
+        c.setPrefWidth(80);
+
+        // Element-Spalten zwischen Name und Z/Geo einsortieren:
+        // -> aktuelle Columns: [Name, (Elemente...), Z, Geo]
+        // wir fügen vor Z ein
+        int zIndex = Math.max(1, tblConcOutput.getColumns().size() - 2);
+        tblConcOutput.getColumns().add(zIndex, c);
+    }
+
+    /** stellt sicher, dass alle gewünschten Elementspalten existieren */
+    private void ensureElementColumns(java.util.Collection<String> elements) {
+        ensureBaseColumns();
+        if (elements == null) return;
+        for (String e : elements) {
+            ensureElementColumn(e);
+        }
+    }
+
+    /** komfort: neue Zeile erstellen (Map) */
+    private java.util.Map<String, Object> newOutputRow(String name) {
+        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+        row.put("Name", name == null ? "" : name);
+        // Elementspalten bleiben null, Nutzer kann editieren
+        row.put("Z", null);
+        row.put("Geo", "");
+        return row;
+    }
+
+
+
+    private void openOutputPopup(java.util.List<String> names, javafx.stage.Window owner) {
+        if (names == null || names.isEmpty()) return;
+
+        javafx.stage.Stage popup = new javafx.stage.Stage();
+        popup.setTitle("Results (" + names.size() + ")");
+        if (owner != null) popup.initOwner(owner);
+        popup.initModality(javafx.stage.Modality.NONE);
+        popup.setAlwaysOnTop(true);
+
+        TabPane tp = new TabPane();
+        tp.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+
+        for (String name : names) {
+            java.util.Map<String, Object> row = concOutputRowByName.get(name);
+            if (row == null) continue;
+
+            // TableView mit genau EINER Zeile (der Ergebnis-Zeile) – editierbar
+            TableView<java.util.Map<String, Object>> table = new TableView<>();
+            table.setEditable(true);
+            table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+
+            javafx.collections.ObservableList<java.util.Map<String, Object>> data = FXCollections.observableArrayList();
+            // Live-Map: direkter Bezug auf die "Master"-Zeile
+            java.util.Map<String, Object> live = new java.util.LinkedHashMap<>(row);
+            data.add(live);
+            table.setItems(data);
+
+            // Helper: generische String-Edit-Spalte
+            java.util.function.BiConsumer<String, TableView<java.util.Map<String, Object>>> addCol =
+                    (colName, tv) -> {
+                        TableColumn<java.util.Map<String, Object>, String> c = new TableColumn<>(colName);
+                        c.setCellValueFactory(cd -> {
+                            Object v = cd.getValue().get(colName);
+                            return new javafx.beans.property.SimpleStringProperty(v == null ? "" : String.valueOf(v));
+                        });
+                        c.setCellFactory(TextFieldTableCell.forTableColumn());
+                        c.setOnEditCommit(ev -> {
+                            String nv = ev.getNewValue();
+                            Object val;
+                            try {
+                                if (nv == null || nv.isBlank()) {
+                                    val = "";
+                                } else {
+                                    // try number, else keep string
+                                    double d = Double.parseDouble(nv.trim().replace(',', '.'));
+                                    val = d;
+                                }
+                            } catch (Exception ex) {
+                                val = nv;
+                            }
+                            ev.getRowValue().put(colName, val);
+                            row.put(colName, val); // Master-Map aktualisieren
+                        });
+                        tv.getColumns().add(c);
+                    };
+
+            // Spalten-Reihenfolge: Name | (Elemente sortiert) | Z | Geo
+            java.util.List<String> keys = new java.util.ArrayList<>(row.keySet());
+            // Basisfelder
+            boolean hasZ = row.containsKey("Z");
+            boolean hasGeo = row.containsKey("Geo");
+            keys.remove("Name");
+            keys.remove("Z");
+            keys.remove("Geo");
+
+            // Elementspalten (heuristisch: 1- oder 2-buchstabige Symbole)
+            java.util.List<String> elementCols = new java.util.ArrayList<>();
+            for (String k : keys) {
+                if (k != null && k.matches("[A-Z][a-z]?")) elementCols.add(k);
+            }
+            // übrige (falls es noch andere Felder gibt)
+            java.util.List<String> others = new java.util.ArrayList<>(keys);
+            others.removeAll(elementCols);
+
+            // sortieren (für saubere Darstellung)
+            java.util.Collections.sort(elementCols, String.CASE_INSENSITIVE_ORDER);
+            java.util.Collections.sort(others, String.CASE_INSENSITIVE_ORDER);
+
+            // sicherstellen, dass Name existiert
+            if (!row.containsKey("Name")) row.put("Name", name);
+
+            addCol.accept("Name", table);
+            for (String k : elementCols) addCol.accept(k, table);
+            // sonstige (falls vorhanden)
+            for (String k : others) addCol.accept(k, table);
+            if (hasZ)   addCol.accept("Z", table);
+            if (hasGeo) addCol.accept("Geo", table);
+
+            // Controls unter der Tabelle: neue Element-Spalte + Target-Zeile (nur Anzeigezweck)
+            TextField tfNewElem = new TextField();
+            tfNewElem.setPromptText("Add element column (e.g., Cu)");
+            Button btnAddElem = new Button("Add");
+            btnAddElem.setOnAction(e -> {
+                String k = tfNewElem.getText();
+                if (k == null) return;
+                k = k.trim();
+                if (!k.matches("[A-Z][a-z]?")) return;
+                if (row.containsKey(k)) return;
+
+                row.put(k, 0.0);
+                // neue Spalte ans TableView anhängen
+                addCol.accept(k, table);
+                table.refresh();
+            });
+
+            Button btnAddTarget = new Button("Add target row");
+            btnAddTarget.setOnAction(e -> {
+                // zweite Zeile als "Target" zur Anzeige hinzufügen
+                java.util.Map<String, Object> target = new java.util.LinkedHashMap<>();
+                target.put("Name", "Target");
+                // gleiche Spalten wie die erste Zeile
+                for (TableColumn<?, ?> tc : table.getColumns()) {
+                    String colName = tc.getText();
+                    if (!"Name".equals(colName)) target.putIfAbsent(colName, "");
+                }
+                data.add(target);
+            });
+
+            HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget);
+            controls.setAlignment(Pos.CENTER_LEFT);
+
+            VBox content = new VBox(10, table, controls);
+            content.setPadding(new Insets(12));
+            VBox.setVgrow(table, Priority.ALWAYS);
+
+            Tab tab = new Tab(name, content);
+            tab.setClosable(true);
+            tp.getTabs().add(tab);
+        }
+
+        Scene sc = new Scene(new BorderPane(tp), 900, 520);
+        popup.setScene(sc);
+        popup.show();
+    }
+
+
+
+
+
 
 
     private void parseDarkElems(String text, java.util.List<String> elems, java.util.List<Integer> ints) {

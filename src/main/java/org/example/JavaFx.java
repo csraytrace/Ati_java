@@ -11,6 +11,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.ScatterChart;
 import javafx.scene.control.*;
+import javafx.scene.control.cell.CheckBoxTableCell;
 import javafx.scene.control.cell.ComboBoxTableCell;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.image.Image;
@@ -191,7 +192,7 @@ public class JavaFx extends Application {
 
 
 
-        stage.setTitle("JavaFX – Parameter Tab with Prompt Toggle + Plot Button");
+        stage.setTitle("Rayquant");
         stage.setScene(scene);
         var url = Objects.requireNonNull(getClass().getResource("/dino.png"), "Icon nicht gefunden!");
         stage.getIcons().add(new Image(url.toExternalForm()));
@@ -241,6 +242,11 @@ public class JavaFx extends Application {
         lblCharZuCont.setTooltip(ttValues);
         lblCharZuContL.setTooltip(ttValues);
         lblSigmaConst.setTooltip(ttValues);
+
+        Tooltip ttkonst = new Tooltip("Parameter does not effect calculated concentrations");
+        ttkonst.setShowDelay(javafx.util.Duration.millis(300));
+        lblXRayTubeVoltage.setTooltip(ttkonst);
+        lblMeasurementTime.setTooltip(ttkonst);
 
 
 
@@ -2510,39 +2516,6 @@ public class JavaFx extends Application {
         } catch (Exception ignore) {}
     }
 
-    private void saveMatFiltersToPrefs(Preferences p, java.util.List<Verbindung> list,
-                                       java.util.Map<Verbindung,String> textMap,
-                                       java.util.Map<Verbindung,Boolean> useMap) {
-        // vorherige Einträge leeren
-        deleteChildren(p);
-        p.putInt("count", list.size());
-        for (int i = 0; i < list.size(); i++) {
-            Verbindung v = list.get(i);
-            Preferences c = p.node(Integer.toString(i));
-            c.put("formula", textMap.getOrDefault(v, ""));
-            c.putDouble("density", v.getDichte());
-            c.putDouble("thicknessCm", v.getFensterDickeCm());
-            c.putBoolean("use", useMap.getOrDefault(v, Boolean.TRUE));
-        }
-    }
-
-    private void saveFuncSegsToPrefs(Preferences p, java.util.List<PwSegment> segs) {
-        deleteChildren(p);
-        p.putInt("count", segs.size());
-        for (int i = 0; i < segs.size(); i++) {
-            PwSegment s = segs.get(i);
-            Preferences c = p.node(Integer.toString(i));
-            c.putBoolean("enabled", s.enabled);
-            c.put("expr", s.expr==null? "": s.expr);
-            c.putDouble("a", s.a);
-            c.putDouble("b", s.b);
-            c.putBoolean("inclA", s.inclA);
-            c.putBoolean("inclB", s.inclB);
-            c.putBoolean("clamp", s.clamp);
-            c.putDouble("yMin", s.yMin);
-            c.putDouble("yMax", s.yMax);
-        }
-    }
 
 
     private AppSettings loadProfileFromPrefs(String name) {
@@ -3027,6 +3000,12 @@ public class JavaFx extends Application {
 
         // --- Liste der eingelesenen Dateien ---
         ListView<java.nio.file.Path> list = new ListView<>(concPaths);
+
+        list.setFixedCellSize(28);                                // gleichmäßige Zeilenhöhe
+        int visibleRows = 6;                                      // wie viele Zeilen ohne Scrollbar sichtbar sein sollen
+        list.setPrefHeight(visibleRows * list.getFixedCellSize() + 2);
+        list.setMaxHeight(javafx.scene.layout.Region.USE_PREF_SIZE);
+
         list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
@@ -3132,32 +3111,90 @@ public class JavaFx extends Application {
             }
         });
 
-        // --- Berechnungsteil (ohne/mit Dark) ---
+
+// --- Zeile 1: Datei-Auswahl ---
+        HBox rowFile = new HBox(10, selLbl, concFileCombo, btnShowSelected);
+        rowFile.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(concFileCombo, Priority.ALWAYS);
+
+
+// --- Zeile 2: Dark-Optionen (3 von 4 Inputs: Z, Binder, Binder-Anteil) ---
+
+        // --- Zeile 2: Dark-Optionen (3 Inputs) ---
+        chkUseDark  = new CheckBox("Dark-Matrix verwenden");
+
+        Label lblZ      = new Label("Z:");
+        tfDarkZ     = new TextField();  tfDarkZ.setPromptText("z.B. 21.47"); tfDarkZ.setPrefColumnCount(8);
+
+        Label lblBinder = new Label("Binder:");
+        tfDarkBinder= new TextField();  tfDarkBinder.setPromptText("z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(18);
+
+        Label lblFrac   = new Label("Anteil:");
+        tfDarkBinderFrac = new TextField(); tfDarkBinderFrac.setPromptText("z.B. 1.04/5.52"); tfDarkBinderFrac.setPrefColumnCount(10);
+
+        HBox rowDarkA = new HBox(10, chkUseDark, lblZ, tfDarkZ, lblBinder, tfDarkBinder, lblFrac, tfDarkBinderFrac);
+        rowDarkA.setAlignment(Pos.CENTER_LEFT);
+
+// Disable-Bindings der 3 Felder per Checkbox
+        tfDarkZ.disableProperty().bind(chkUseDark.selectedProperty().not());
+        tfDarkBinder.disableProperty().bind(chkUseDark.selectedProperty().not());
+        tfDarkBinderFrac.disableProperty().bind(chkUseDark.selectedProperty().not());
+
+
+// --- Zeile 3: Nur Dark-Elemente ---
+// --- Zeile 3: 2-Zeilen-Raster: oben Werte, unten Element-Toggles ---
+        darkToggles = new java.util.ArrayList<>();
+        darkFields  = new java.util.ArrayList<>();
+        darkGrid    = new GridPane();
+        darkGrid.setHgap(8);
+        darkGrid.setVgap(6);
+
+// pro Element eine Spalte
+        for (int i = 0; i < DARK_ELEMS_ORDER.length; i++) {
+            String sym = DARK_ELEMS_ORDER[i];
+
+            TextField tf = new TextField();
+            tf.setPromptText("0");
+            tf.setPrefColumnCount(4);
+
+            ToggleButton tb = new ToggleButton(sym);
+            tb.setSelected(false);
+
+            // Button ist gesperrt, wenn Dark-Matrix AUS
+            tb.disableProperty().bind(chkUseDark.selectedProperty().not());
+
+            // Feld ist gesperrt, wenn Dark-Matrix AUS ODER Button AUS
+            tf.disableProperty().bind(
+                    chkUseDark.selectedProperty().not().or(tb.selectedProperty().not())
+            );
+
+            // Komfort: beim Aktivieren und leer -> "1" einsetzen
+            tb.selectedProperty().addListener((o, was, ist) -> {
+                if (ist && (tf.getText() == null || tf.getText().isBlank())) tf.setText("1");
+            });
+
+            darkFields.add(tf);
+            darkToggles.add(tb);
+
+            // in Grid platzieren: Zeile 0 = Werte, Zeile 1 = Button
+            darkGrid.add(tf, i, 0);
+            darkGrid.add(tb, i, 1);
+        }
+
+
+        // --- Zeile 4: Berechnen ---
         Button btnCalc = new Button("Berechnen");
         btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
         btnCalc.setOnAction(e -> runConcCalculation());
 
-        chkUseDark  = new CheckBox("Dark-Matrix verwenden");
-        tfDarkZ     = new TextField();  tfDarkZ.setPromptText("Z (z.B. 21.47)"); tfDarkZ.setPrefColumnCount(8);
-        tfDarkElems = new TextField();  tfDarkElems.setPromptText("Dark-Elemente: O:0, Al:1401, …"); tfDarkElems.setPrefColumnCount(28);
-        tfDarkBinder= new TextField();  tfDarkBinder.setPromptText("Binder (optional) z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(24);
-        tfDarkBinderFrac = new TextField();
-        tfDarkBinderFrac.setPromptText("Binder-Anteil z.B. 1.04/5.52");
-        tfDarkBinderFrac.setPrefColumnCount(16);
-
-// nur aktiv wenn Dark aktiv
-        tfDarkBinderFrac.disableProperty().bind(chkUseDark.selectedProperty().not());
-
-// … in die HBox einfügen:
-        HBox underList = new HBox(10, selLbl, concFileCombo, btnShowSelected, new Separator(), btnCalc,
-                chkUseDark, tfDarkZ, tfDarkElems, tfDarkBinder, tfDarkBinderFrac);
-        underList.setAlignment(Pos.CENTER_LEFT);
+        HBox rowActions = new HBox(10, btnCalc);
+        rowActions.setAlignment(Pos.CENTER_LEFT);
 
 
-        // Dark-UI nur aktiv, wenn angehakt
-        tfDarkZ.disableProperty().bind(chkUseDark.selectedProperty().not());
-        tfDarkElems.disableProperty().bind(chkUseDark.selectedProperty().not());
-        tfDarkBinder.disableProperty().bind(chkUseDark.selectedProperty().not());
+// alles zusammen als kompakter Block
+        VBox underList = new VBox(8, rowFile, rowDarkA, darkGrid, rowActions);
+
+
 
         // Ergebnis-Ausgabe
         taConcOutput = new TextArea();
@@ -3170,8 +3207,8 @@ public class JavaFx extends Application {
         // --- Layout ---
         VBox left = new VBox(10, title, controls, list, new Separator(), underList, taConcOutput);
         left.setPadding(new Insets(14));
-        VBox.setVgrow(list, Priority.ALWAYS);
-        VBox.setVgrow(taConcOutput, Priority.SOMETIMES);
+        VBox.setVgrow(list, Priority.NEVER);
+        VBox.setVgrow(taConcOutput, Priority.NEVER);
 
         // Wenn du später eine rechte Seite willst, kannst du einen SplitPane nehmen.
         // Aktuell nur die linke Spalte als Inhalt des Tabs:
@@ -3223,10 +3260,13 @@ public class JavaFx extends Application {
         public final javafx.beans.property.StringProperty element    = new javafx.beans.property.SimpleStringProperty();
         public final javafx.beans.property.StringProperty transition = new javafx.beans.property.SimpleStringProperty(); // "K" | "L"
         public final javafx.beans.property.DoubleProperty intensity  = new javafx.beans.property.SimpleDoubleProperty();
-        public ConcRow(String element, String transition, double intensity) {
+        public final javafx.beans.property.BooleanProperty enabled    = new javafx.beans.property.SimpleBooleanProperty(true); // NEW
+
+        public ConcRow(String element, String transition, double intensity, boolean enabled) {
             this.element.set(element);
             this.transition.set(transition);
             this.intensity.set(intensity);
+            this.enabled.set(enabled);
         }
     }
 
@@ -3301,26 +3341,47 @@ public class JavaFx extends Application {
             }
         }
 
-        // In Zeilen nach deinen Regeln
+// In Zeilen nach neuen Regeln
         var rows = javafx.collections.FXCollections.<ConcRow>observableArrayList();
+
         for (var e : sums.entrySet()) {
             String ele = e.getKey();
-            if (exclude.contains(ele)) continue;
-
             double k = e.getValue()[0];
             double l = e.getValue()[1];
 
-            boolean hasK = k != 0.0;
-            boolean hasL = l != 0.0;
+            boolean hasK = k > 0.0;
+            boolean hasL = l > 0.0;
 
+            // wenn beides 0 -> gar keine Rows
             if (!hasK && !hasL) continue;
-            if (hasK && hasL) { rows.add(new ConcRow(ele, "K", k)); continue; }
-            if (hasK)          { rows.add(new ConcRow(ele, "K", k)); }
-            else               { rows.add(new ConcRow(ele, "L", l)); }
+
+            boolean isAnode = exclude.contains(ele);
+
+            if (isAnode) {
+                // Anoden-Elemente: zeigen, aber nie aktiv
+                if (hasK) rows.add(new ConcRow(ele, "K", k, false));
+                if (hasL) rows.add(new ConcRow(ele, "L", l, false));
+                continue;
+            }
+
+            if (hasK && hasL) {
+                // beide vorhanden: K aktiv, L inaktiv
+                rows.add(new ConcRow(ele, "K", k, true));
+                rows.add(new ConcRow(ele, "L", l, false));
+            } else if (hasK) {
+                // nur K vorhanden -> aktiv
+                rows.add(new ConcRow(ele, "K", k, true));
+            } else { // nur L vorhanden -> aktiv
+                rows.add(new ConcRow(ele, "L", l, true));
+            }
         }
 
-        rows.sort(java.util.Comparator.comparing(r -> r.element.get()));
+// sortieren
+        rows.sort(java.util.Comparator
+                .comparing((ConcRow r) -> r.element.get())
+                .thenComparing(r -> r.transition.get()));
         return rows;
+
     }
 
     private javafx.collections.ObservableList<ConcRow> buildRowsForSingleFile(java.nio.file.Path file) {
@@ -3355,6 +3416,11 @@ public class JavaFx extends Application {
             table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
             // --- Spalten ---
+
+            TableColumn<ConcRow, Boolean> cUse = new TableColumn<>("Use");
+            cUse.setCellValueFactory(data -> data.getValue().enabled);
+            cUse.setCellFactory(CheckBoxTableCell.forTableColumn(cUse));
+            cUse.setEditable(true);
 
             // Element (ComboBox, editiert Property direkt)
             TableColumn<ConcRow, String> cElement = new TableColumn<>("Element");
@@ -3391,12 +3457,12 @@ public class JavaFx extends Application {
             });
             cInt.setEditable(true);
 
-            table.getColumns().setAll(cElement, cTrans, cInt);
+            table.getColumns().setAll(cUse,cElement, cTrans, cInt);
 
             // --- Aktionen unter der Tabelle: + Neu / Löschen ---
             Button btnAdd = new Button("+ Neu");
             btnAdd.setOnAction(e ->
-                    rows.add(new ConcRow(Elementsymbole.values()[0].name(), "K", 0.0))
+                    rows.add(new ConcRow(Elementsymbole.values()[0].name(), "K", 0.0,true))
             );
 
             Button btnDel = new Button("Löschen");
@@ -3439,11 +3505,19 @@ public class JavaFx extends Application {
     // Dark-Optionen
     private CheckBox chkUseDark;
     private TextField tfDarkZ;             // Z (Double)
-    private TextField tfDarkElems;         // z.B.: "O:0, Al:1401, Ti:31881"
     private TextField tfDarkBinder;        // Binder-Formel, z.B. "1 C38H76N2O2"
 
     // Ergebnis-Output (optional)
     private TextArea taConcOutput;
+
+    // Dark-Verhältnisse per GUI (11 Elemente)
+    private static final String[] DARK_ELEMS_ORDER = {
+            "H","He","Li","Be","B","C","N","O","F","Ne","Na"
+    };
+    private java.util.List<ToggleButton> darkToggles; // 11 Buttons
+    private java.util.List<TextField>   darkFields;   // 11 Textfelder
+    private GridPane darkGrid;                        // 2 Zeilen, 11 Spalten
+
 
 
     private static String concKey(String element, String transition) {
@@ -3472,26 +3546,32 @@ public class JavaFx extends Application {
         // Intensität wird gerundet (Probe erwartet Integer-Liste)
         java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
         for (ConcRow r : rows) {
+            if (r == null) continue;
+            if (!r.enabled.get()) continue;         // NEW: nur true verwenden
+            if (!(r.intensity.get() > 0.0)) continue;
+            double inten = r.intensity.get();
+            if (!(inten > 0.0)) continue;           // 0 ignorieren
+
             String ele = r.element.get();
             if (ele == null || ele.isBlank()) continue;
             String tr = (r.transition.get()==null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
-            double inten = r.intensity.get();
-
-            if (inten == 0.0) continue; // deine Regel
 
             ConcRow already = bestByElement.get(ele);
             if (already == null) {
                 bestByElement.put(ele, r);
             } else {
-                // K hat Vorrang vor L
                 boolean newIsK = "K".equals(tr);
                 boolean oldIsK = "K".equals(already.transition.get());
-                if (newIsK && !oldIsK) bestByElement.put(ele, r);
+                if (newIsK && !oldIsK) bestByElement.put(ele, r); // K schlägt L
+                    // wenn beides K oder beides L: nimm die größere Intensität
+                else if (newIsK == oldIsK && inten > already.intensity.get()) {
+                    bestByElement.put(ele, r);
+                }
             }
         }
 
         if (bestByElement.isEmpty()) {
-            new Alert(Alert.AlertType.INFORMATION, "Keine gültigen Intensitäten > 0 gefunden.").showAndWait();
+            new Alert(Alert.AlertType.INFORMATION, "Keine aktivierten Zeilen mit Intensität > 0 gefunden.").showAndWait();
             return;
         }
 
@@ -3571,34 +3651,68 @@ public class JavaFx extends Application {
         StringBuilder out = new StringBuilder();
 
         if (chkUseDark != null && chkUseDark.isSelected()) {
-            // === DARK-MATRIX ===============================================
+            // 1) Require Z
+            String zText = tfDarkZ.getText();
+            Double zVal = null;
+            if (zText != null && !zText.trim().isBlank()) {
+                try { zVal = Double.parseDouble(zText.trim().replace(',', '.')); } catch (NumberFormatException ignore) {}
+            }
+            if (zVal == null) {
+                // markFieldError(tfDarkZ);
+                new Alert(Alert.AlertType.INFORMATION,
+                        "Please enter a valid Z value before using the dark matrix."
+                ).showAndWait();
+                return;
+            }
+            double Z = zVal;
 
-            // 5.1 Dark-Elemente mit Verhältnissen parsen (z.B. "O:H=1:2" oder "O=1, H=2" oder "O")
-            java.util.Map<String, Double> darkWeights = parseDarkElemsWithRatios(tfDarkElems.getText());
-            // -> darkWeights sind normiert (Summe=1), Schlüssel sind Elementsymbole
+            // 2) Collect dark elements
+            java.util.Map<String, Double> darkWeights = collectDarkWeightsFromUI();
+            if (darkWeights.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION,
+                        "Please enable at least one dark element and enter a value > 0."
+                ).showAndWait();
+                return;
+            }
 
-            // 5.2 Z lesen
-            double Z;
-            try { Z = Double.parseDouble(tfDarkZ.getText().trim().replace(',', '.')); }
-            catch (Exception ex) { Z = 0.0; }
-
-            // 5.3 Binder (optional)
+            // 3) Binder: require fraction if binder is set
             Verbindung binder = null;
-            String binderText = (tfDarkBinder.getText()==null? "" : tfDarkBinder.getText().trim());
+            String binderText = (tfDarkBinder.getText()==null ? "" : tfDarkBinder.getText().trim());
             if (!binderText.isBlank()) {
+                String fracText = tfDarkBinderFrac.getText();
+                // a) Any fraction entered?
+                if (fracText == null || fracText.trim().isBlank()) {
+                    // markFieldError(tfDarkBinderFrac);
+                    new Alert(Alert.AlertType.INFORMATION,
+                            "Binder is specified but no fraction was provided.\n" +
+                                    "Please enter a valid fraction (e.g., 1.04/5.52 or 0.1884)."
+                    ).showAndWait();
+                    return;
+                }
+                // b) Fraction parseable and > 0?
+                double frac = parseBinderFraction(fracText);
+                if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac)) {
+                    // markFieldError(tfDarkBinderFrac);
+                    new Alert(Alert.AlertType.INFORMATION,
+                            "Invalid binder fraction.\n" +
+                                    "Allowed formats: 1.04/5.52 or 0.1884 (must be > 0)."
+                    ).showAndWait();
+                    return;
+                }
+
                 try {
                     Funktionen fx = new FunktionenImpl();
                     binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
-
-                    // Binder-Anteil (z.B. "1.04/5.52")
-                    double frac = parseBinderFraction(tfDarkBinderFrac.getText());
-                    if (frac > 0) {
-                        binder.multipliziereKonzentrationen(frac);
-                    }
+                    binder.multipliziereKonzentrationen(frac);
+                    // clearFieldError(tfDarkBinderFrac);
                 } catch (Exception ex) {
-                    new Alert(Alert.AlertType.WARNING, "Binder konnte nicht geparst werden:\n" + ex.getMessage()).showAndWait();
+                    new Alert(Alert.AlertType.WARNING,
+                            "Failed to parse binder:\n" + ex.getMessage()
+                    ).showAndWait();
+                    return;
                 }
             }
+
 
             // 5.4 ProbeDark = Mess-Elemente + Dark-Elemente (Dark-Intensität = 0)
             java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
@@ -3813,6 +3927,22 @@ public class JavaFx extends Application {
         for (var e : in.entrySet()) out.put(e.getKey(), e.getValue() / sum);
         return out;
     }
+
+    /** Liest aktivierte Dark-Elemente & Werte aus der GUI; normalisiert auf Summe 1. */
+    private java.util.Map<String, Double> collectDarkWeightsFromUI() {
+        java.util.Map<String, Double> raw = new java.util.LinkedHashMap<>();
+        if (darkToggles == null || darkFields == null) return raw;
+        for (int i = 0; i < DARK_ELEMS_ORDER.length; i++) {
+            ToggleButton tb = darkToggles.get(i);
+            TextField tf = darkFields.get(i);
+            if (tb == null || tf == null) continue;
+            if (!tb.isSelected()) continue;
+            Double v = safeDouble(tf.getText());
+            if (v != null && v > 0.0) raw.put(DARK_ELEMS_ORDER[i], v);
+        }
+        return normalizeWeights(raw);
+    }
+
 
     /** akzeptiert "a/b" oder direkten Anteil "0.1884" */
     private static double parseBinderFraction(String s) {

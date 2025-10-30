@@ -15,7 +15,7 @@ public class TestBobyqa {
                 new String[]{"Einfallswinkelalpha"},
                 new String[]{"activeLayer"},
                 new String[]{"Totschicht"},
-                new String[]{"charzucontL"},
+                //new String[]{"charzucontL"},
                 new String[]{"charzucont"},
                 new String[]{"Kontaktmaterialdicke"}
 
@@ -23,10 +23,11 @@ public class TestBobyqa {
 
         List<double[]> grenzen = Arrays.asList(
                 new double[]{0.8, 1.0314},
-                new double[]{15,25},
+                //new double[]{15,25},
+                new double[]{19,21},
                 new double[]{2, 4},
                 new double[]{0.0, 0.2},
-                new double[]{0.1, 1.2},
+                //new double[]{0.1, 1.2},
                 new double[]{0.8, 1.1},
                 new double[]{10, 40}
         );
@@ -42,8 +43,8 @@ public class TestBobyqa {
                 new Object[]{544606, "ZR", 0},
                 new Object[]{464025, "ZN", 0},
                 new Object[]{498315, "GE", 0},
-                new Object[]{10844,  "AL", 0},
-                new Object[]{20692,  "SI", 0},
+                //new Object[]{10844,  "AL", 0},
+                //new Object[]{20692,  "SI", 0},
                 new Object[]{106785, "BI", 1},
                 new Object[]{13396,  "CD", 1},
                 new Object[]{17196,  "SN", 1},

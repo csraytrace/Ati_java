@@ -149,7 +149,8 @@ public class TestLagrangeInterpolation {
                 .collect(Collectors.joining(", ")));
 
 
-        double x0 = 3.8537950863499206E-5;
+        //double x0 = 3.8537950863499206E-5;
+        double x0 = 5.203194435211347E-6;
         String Moxfkt = KalibrierungFunktion.buildLagrangeExprShifted(moxwerte,geo,x0);
         System.out.println(Moxfkt);
 
@@ -182,20 +183,20 @@ public class TestLagrangeInterpolation {
 
         PiecewiseModel gelb = PiecewiseModel.fromPolyline(moxwerte, ywerte, null, null);
 
-        for (Verbindung v : filter) {
-            gelb.applyToFilter(v, null); // oder null, wenn du nicht multiplizieren willst
-        }
-
-
-
-
-
-
-
         //for (Verbindung v : filter) {
-         //   v.clearModulation(1.0);// außerhalb = 1
-        //    v.addModulationSegment(MoxfktClamped, x1, true, 25, true); // Formel gilt auf [x1,x2]
+        //    gelb.applyToFilter(v, null); // oder null, wenn du nicht multiplizieren willst
         //}
+
+
+
+
+// oben piecewise unten Lagrange
+
+
+        for (Verbindung v : filter) {
+            v.clearModulation(1.0);// außerhalb = 1
+            v.addModulationSegment(MoxfktClamped, x1, true, 25, true); // Formel gilt auf [x1,x2]
+        }
 
 
 

@@ -228,7 +228,8 @@ public class KalibrierungFunktion {
         double[] residuen = new double[geo_ele.length];
         for (int k = 0; k < residuen.length; k++) {
             //residuen[k] = (geo_ele[k] - geo_mittel) / geo_mittel;
-            residuen[k] = (geo_ele[k] - geo) ;// absolut
+            residuen[k] = (geo_ele[k] - geo_mittel);
+            //residuen[k] = (geo_ele[k] - geo) ;// absolut
         }
 
         final int n = residuen.length;
@@ -850,7 +851,10 @@ public class KalibrierungFunktion {
             throw new IllegalArgumentException("xs und geo müssen gleich lang sein.");
         double[] ys = new double[geo.length];
         //for (int i = 0; i < geo.length; i++) ys[i] = geo[i] - x0;
-        for (int i = 0; i < geo.length; i++) ys[i] = x0 / geo[i];
+        double geodurchschnitt = mittelGeo(geo);
+        //for (int i = 0; i < geo.length; i++) ys[i] = x0 / geo[i];
+        for (int i = 0; i < geo.length; i++) ys[i] = geodurchschnitt / geo[i];
+        System.out.println("durchschnit"+geodurchschnitt);
         return buildLagrangeExpr(xs, ys);
     }
 

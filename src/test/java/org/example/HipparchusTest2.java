@@ -13,7 +13,7 @@ public class HipparchusTest2 {
         List<Integer> elementIntDark = Arrays.asList(1, 12, 11, 14, 16, 55);
 
         double Emin = 0;
-        double Emax = 30;
+        double Emax = 40;
         double step = 0.01;
 
         Probe probeDark = new Probe(elementSymboleDark, "MCMASTER.TXT", Emin, Emax, step, elementIntDark);

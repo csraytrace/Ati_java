@@ -129,6 +129,41 @@ public class JavaFx extends Application {
 
 
 
+    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String,Object>>>
+            concTargetsByBase = new java.util.LinkedHashMap<>();
+
+    private javafx.collections.ObservableList<java.util.Map<String,Object>> targetsOf(String base){
+        return concTargetsByBase.computeIfAbsent(base, k -> FXCollections.observableArrayList());
+    }
+
+
+
+    // Hält (falls ein Output-Popup offen ist) dessen Data-Liste pro Ergebnisname
+    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String,Object>>> concOpenOutputDataByName = new java.util.HashMap<>();
+
+    private static String baseNameOf(String uniqueName) {
+        return uniqueName == null ? null : uniqueName.replaceFirst("\\s*\\(\\d+\\)$", "");
+    }
+    private static boolean hasSuffix(String name) {
+        return name != null && name.matches(".*\\(\\d+\\)\\s*$");
+    }
+    private static java.util.Map<String,Object> asTargetRow(java.util.Map<String,Object> src, String fromName) {
+        java.util.Map<String,Object> target = new java.util.LinkedHashMap<>(src);
+        target.put("Name",  fromName); // oder: "Target ("+fromName+")"
+        return target;
+    }
+
+
+
+    // Sichtbare Result-Liste: nur Basen
+    private final javafx.collections.ObservableList<String> concBaseNames = FXCollections.observableArrayList();
+    // Merker: welche eindeutige Version (z.B. "test (4)") ist die jüngste für diese Basis ("test")?
+    private final java.util.Map<String,String> lastUniqueByBase = new java.util.LinkedHashMap<>();
+
+
+
+
+
 
 
 
@@ -3238,20 +3273,43 @@ public class JavaFx extends Application {
         Label resultsTitle = new Label("Results");
         resultsTitle.setStyle("-fx-font-weight: bold;");
 
-        concResultsListView = new ListView<>(concResultNames);
+        concResultsListView = new ListView<>(concBaseNames);
+
+
+        concResultsListView.setCellFactory(lv -> new ListCell<>() {
+            @Override protected void updateItem(String base, boolean empty) {
+                super.updateItem(base, empty);
+                if (empty || base == null) {
+                    setText(null);
+                    setTooltip(null);
+                } else {
+                    setText(base); // nur Basis anzeigen
+                    String full = lastUniqueByBase.get(base);
+                    setTooltip(full != null && !full.equals(base) ? new Tooltip(full) : null);
+                }
+            }
+        });
+
+
+
+
         concResultsListView.setPlaceholder(new Label("No results yet."));
         concResultsListView.setPrefHeight(160);
         concResultsListView.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2) {
-                String name = concResultsListView.getSelectionModel().getSelectedItem();
-                if (name != null) {
-                    var row = concOutputRowByName.get(name);
-                    if (row != null) {
-                        // Zeigt die gewohnte Ergebnis-Tabelle im Popup
-                        openOutputPopup(java.util.List.of(name),
+                String base = concResultsListView.getSelectionModel().getSelectedItem();
+                if (base != null) {
+                    // bevorzugt die Basisspur (z.B. "test")
+                    String nameToOpen = concOutputRowByName.containsKey(base)
+                            ? base
+                            : lastUniqueByBase.get(base); // Fallback: neueste Version, falls Basis fehlt
+                    if (nameToOpen != null && concOutputRowByName.containsKey(nameToOpen)) {
+                        openOutputPopup(java.util.List.of(nameToOpen),
                                 concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null);
                     }
                 }
+
+
             }
         });
 
@@ -3567,9 +3625,6 @@ public class JavaFx extends Application {
 
 
 
-    private static String concKey(String element, String transition) {
-        return (element == null ? "" : element.trim()) + "|" + (transition == null ? "" : transition.trim());
-    }
 
 
     private void runConcCalculation() {
@@ -3678,9 +3733,8 @@ public class JavaFx extends Application {
 
             // 5) Ergebnis-Name (Dateiname, bei Bedarf (2), (3), …)
             String baseName = file.getFileName().toString();
-            String uniqueName = baseName;
-            int dup = 2;
-            while (concResultNames.contains(uniqueName)) uniqueName = baseName + " (" + dup++ + ")";
+            String uniqueName = nextUniqueName(baseName);
+
 
             // 6) Rechnen
             if (chkUseDark != null && chkUseDark.isSelected()) {
@@ -3720,10 +3774,10 @@ public class JavaFx extends Application {
                         return;
                     }
                     double frac = parseBinderFraction(fracText);
-                    if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac)) {
+                    if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac) || frac > 1.0){
                         new Alert(Alert.AlertType.INFORMATION,
                                 "Invalid binder fraction.\n" +
-                                        "Allowed formats are like 1.04/5.52 or 0.1884 (must be > 0)."
+                                        "Allowed formats are like 1.04/5.52 or 0.1884 (must be > 0 and < 1)."
                         ).showAndWait();
                         return;
                     }
@@ -3771,30 +3825,51 @@ public class JavaFx extends Application {
 
                 // >>>> HIER: Deine echte Optimierung aufrufen und die finalen Größen holen
                 // Platzhalter:
-                java.util.List<Element> elems = probeDark.getElemente();
-                int n = elems.size();
-                int[] zNumbersArr = probeDark.getElementZNumbers().stream().mapToInt(Integer::intValue).toArray();
-                double[] gesamtKonz = new double[n]; // TODO: durch echte Resultate ersetzen
-                double z_mittel_opt = Z;             // TODO: ersetzen
-                double geo          = 1.0;           // TODO: ersetzen
+                double[] darkMatrix = darkWeights.values().stream().mapToDouble(Double::doubleValue).toArray();
 
-                // Ergebnis-Zeile (nach Z sortiert)
-                java.util.Map<String,Object> rowDark = new java.util.LinkedHashMap<>();
-                rowDark.put("Name", uniqueName);
-                Integer[] order = new Integer[n];
-                for (int i = 0; i < n; i++) order[i] = i;
-                java.util.Arrays.sort(order, java.util.Comparator.comparingInt(i -> zNumbersArr[i]));
-                for (int idx : order) {
-                    String sym = elems.get(idx).getSymbol();
-                    double pct = gesamtKonz[idx] * 100.0;
-                    rowDark.put(sym, pct);
-                }
-                rowDark.put("Z", z_mittel_opt);
-                rowDark.put("Geo", geo);
 
-                // registrieren/aktualisieren
-                concOutputRowByName.put(uniqueName, rowDark);
+// 3) Optimieren
+                double[] optimizedParams = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
+
+// 4) Ergebnis ohne Printing zusammenbauen (siehe Punkt 1)
+                CalcIDark.DarkUIResult res = calcDark.computeOptimizedResultForUI(
+                        uniqueName,           // der Dateiname (ggf. "(2)" etc.)
+                        optimizedParams,
+                        darkMatrix,           // = lowVerteilung
+                        Z                     // zMittelwert-Vorgabe
+                );
+
+// 5) In Deine Ergebnis-Maps/Liste eintragen
+                String base = baseNameOf(uniqueName);
+
+// fehlende Spalten garantieren (Dark-Elemente + Binder-Elemente)
+                addMissingDarkColumns(base, res.row, darkWeights, binder);
+
+
+                concOutputRowByName.put(uniqueName, res.row);
                 concResultNames.add(uniqueName);
+
+                registerTargetIfSuffix(uniqueName, res.row);
+
+
+// Optional, damit spätere Popups alle Elementspalten haben:
+                ensureElementColumns(res.row.keySet().stream()
+                        .filter(k -> k.matches("[A-Z][a-z]?"))
+                        .toList());
+
+
+// jüngste eindeutige Version merken
+                lastUniqueByBase.put(base, uniqueName);
+// Basis nur einmal in die sichtbare Liste
+                if (!concBaseNames.contains(base)) concBaseNames.add(base);
+
+// UI aktualisieren
+                if (concResultsListView != null) {
+                    concResultsListView.refresh();
+                    concResultsListView.getSelectionModel().select(base);
+                    concResultsListView.scrollTo(base);
+                }
+
 
             } else {
                 // --- NORMAL ---
@@ -3809,30 +3884,72 @@ public class JavaFx extends Application {
                         activeTubeFilters, activeDetFilters
                 );
 
+// 1) Konzentrationen (in %) berechnen
                 PreparedValues pv = calc.werteVorbereitenAlle();
                 double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000); // [%]
 
+// 2) Z̄ aus den berechneten Konzentrationen (gewichtetes Mittel)
+                java.util.List<Integer> zNumsList = probe.getElementZNumbers();
+                int[] zNums = zNumsList.stream().mapToInt(Integer::intValue).toArray();
+                double sumK = 0.0, sumZK = 0.0;
+                for (int i = 0; i < relKonz.length && i < zNums.length; i++) {
+                    sumK  += relKonz[i];
+                    sumZK += relKonz[i] * zNums[i];
+                }
+                double zMean = (sumK > 0) ? (sumZK / sumK) : Double.NaN;
+
+// 3) Geo als Mittelwert aus calc.geometriefaktor(origKonz, berechInt)
+                double[] berechInt = calc.berechneSummenintensitaetMitKonz(relKonz); // konsistent zu deinem Beispiel
+
+// origKonz: wenn verfügbar, nimm calc.konzentration; sonst aus relKonz (in 0..1) ableiten
+                double[] origKonz = calc.konzentration;
+                if (origKonz == null || origKonz.length != relKonz.length) {
+                    origKonz = java.util.Arrays.stream(relKonz).map(v -> v / 100.0).toArray();
+                }
+
+                double[] geoArr = calc.geometriefaktor(origKonz, berechInt);
+                double geoMean = java.util.Arrays.stream(geoArr).average().orElse(Double.NaN);
+
+// 4) Ergebniszeile aufbauen: Name | Elemente (nach Z) | Z | Geo
                 java.util.Map<String,Object> rowOut = new java.util.LinkedHashMap<>();
                 rowOut.put("Name", uniqueName);
 
-                // Spalten alphabetisch nach Symbol
-                java.util.List<String> syms = new java.util.ArrayList<>(elementSymbole);
-                java.util.Collections.sort(syms, String.CASE_INSENSITIVE_ORDER);
-                for (String sym : syms) {
+// Elemente nach Z sortieren
+                java.util.List<String> elemsByZ = new java.util.ArrayList<>(elementSymbole);
+                elemsByZ.sort(java.util.Comparator.comparingInt(sym ->
+                        zNums[ elementSymbole.indexOf(sym) ]   // nutzt Probe-Reihenfolge → zNums passt
+                ));
+// Konzentrationen eintragen
+                for (String sym : elemsByZ) {
                     int idx = elementSymbole.indexOf(sym);
                     if (idx >= 0 && idx < relKonz.length) rowOut.put(sym, relKonz[idx]);
                 }
 
+// Z und Geo ans Ende
+                rowOut.put("Z", zMean);
+                rowOut.put("Geo", geoMean);
+
+// 5) Registrieren
                 concOutputRowByName.put(uniqueName, rowOut);
                 concResultNames.add(uniqueName);
+
+                registerTargetIfSuffix(uniqueName, rowOut);
             }
 
             // 7) UI: Result-Liste aktualisieren + den neuen Eintrag auswählen
+            String base = baseNameOf(uniqueName);
+// jüngste eindeutige Version merken
+            lastUniqueByBase.put(base, uniqueName);
+// Basis nur einmal in die sichtbare Liste
+            if (!concBaseNames.contains(base)) concBaseNames.add(base);
+
+// UI aktualisieren
             if (concResultsListView != null) {
                 concResultsListView.refresh();
-                concResultsListView.getSelectionModel().select(concResultNames.size() - 1);
-                concResultsListView.scrollTo(concResultNames.size() - 1);
+                concResultsListView.getSelectionModel().select(base);
+                concResultsListView.scrollTo(base);
             }
+
 
         } catch (Throwable ex) {
             ex.printStackTrace();
@@ -3844,39 +3961,49 @@ public class JavaFx extends Application {
 
 
 
+    // Liefert den nächsten eindeutigen Namen für denselben Basisnamen.
+// Bezieht sowohl concResultNames als auch concOutputRowByName ein (Sicherheit).
+    private String nextUniqueName(String base) {
+        int max = -1; // -1 bedeutet: Basisname noch frei
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile("\\((\\d+)\\)\\s*$");
 
-    private static void addIfNonNull(javafx.scene.layout.Pane parent, javafx.scene.Node... nodes) {
-        for (javafx.scene.Node n : nodes) {
-            if (n != null) parent.getChildren().add(n);
-        }
-    }
-
-    /** Baut die Spalten der Ergebnis-Tabelle (Name, Elemente, Z, Geo) neu auf. */
-    private void rebuildColumns() {
-        // Basis-Spalten sicherstellen
-        ensureBaseColumns();
-
-        // Alle Element-Spalten einsammeln: zuerst die explizit gemerkten,
-        // dann alles, was in den vorhandenen Datenzeilen als Element-Key auftaucht.
-        java.util.Set<String> allElems = new java.util.LinkedHashSet<>(concOutputElementCols);
-
-        // Falls du eine Sammelliste der sichtbaren Zeilen hast:
-        for (java.util.Map<String, Object> row : concOutputRows) {
-            for (String k : row.keySet()) {
-                if (k != null && k.matches("[A-Z][a-z]?")) {
-                    allElems.add(k);
-                }
+        // 1) Liste durchsuchen
+        for (String n : concResultNames) {
+            if (!base.equals(baseNameOf(n))) continue;
+            java.util.regex.Matcher m = p.matcher(n);
+            if (m.find()) {
+                int k = Integer.parseInt(m.group(1));
+                if (k > max) max = k;
+            } else {
+                // nackter Basisname vorhanden
+                max = Math.max(max, 0);
             }
         }
 
-        // Spalten für alle gefundenen Elemente anlegen (falls noch nicht vorhanden)
-        ensureElementColumns(allElems);
+        // 2) Map-Keys ebenfalls berücksichtigen (falls etwas in der Liste fehlt)
+        for (String n : concOutputRowByName.keySet()) {
+            if (!base.equals(baseNameOf(n))) continue;
+            java.util.regex.Matcher m = p.matcher(n);
+            if (m.find()) {
+                int k = Integer.parseInt(m.group(1));
+                if (k > max) max = k;
+            } else {
+                max = Math.max(max, 0);
+            }
+        }
 
-        // Tabelle auffrischen
-        if (tblConcOutput != null) {
-            tblConcOutput.refresh();
+        if (max < 0) {
+            // Basisname ist komplett frei
+            return base;
+        } else if (max == 0 && !concResultNames.contains(base) && !concOutputRowByName.containsKey(base)) {
+            // Falls aus irgendeinem Grund der nackte Name nicht existiert, gib ihn frei
+            return base;
+        } else {
+            // Nächste freie Nummer
+            return base + " (" + (max + 1) + ")";
         }
     }
+
 
 
 
@@ -3884,6 +4011,7 @@ public class JavaFx extends Application {
 
     /** erstellt die Basisspalten (Name, Z, Geo), falls noch nicht vorhanden */
     private void ensureBaseColumns() {
+        if (tblConcOutput == null) return;
         if (tblConcOutput.getColumns().isEmpty()) {
             // Name (String)
             TableColumn<java.util.Map<String, Object>, String> cName = new TableColumn<>("Name");
@@ -3925,8 +4053,20 @@ public class JavaFx extends Application {
         }
     }
 
+    // oben in der Klasse (Hilfsfunktionen)
+    private static boolean isEnumElement(String sym) {
+        try { return sym != null && org.example.Elementsymbole.valueOf(sym) != null; }
+        catch (Exception e) { return false; }
+    }
+    private static int enumIndex(String sym) {
+        org.example.Elementsymbole e = org.example.Elementsymbole.valueOf(sym);
+        return java.util.Arrays.asList(org.example.Elementsymbole.values()).indexOf(e);
+    }
+
+
     /** legt eine (Double-)Elementspalte an, falls noch nicht vorhanden */
     private void ensureElementColumn(String elementSymbol) {
+        if (tblConcOutput == null || elementSymbol == null || elementSymbol.isBlank()) return;
         if (elementSymbol == null || elementSymbol.isBlank()) return;
         if (concOutputElementCols.contains(elementSymbol)) return;
 
@@ -3956,21 +4096,10 @@ public class JavaFx extends Application {
 
     /** stellt sicher, dass alle gewünschten Elementspalten existieren */
     private void ensureElementColumns(java.util.Collection<String> elements) {
+        if (tblConcOutput == null) return;
         ensureBaseColumns();
         if (elements == null) return;
-        for (String e : elements) {
-            ensureElementColumn(e);
-        }
-    }
-
-    /** komfort: neue Zeile erstellen (Map) */
-    private java.util.Map<String, Object> newOutputRow(String name) {
-        java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
-        row.put("Name", name == null ? "" : name);
-        // Elementspalten bleiben null, Nutzer kann editieren
-        row.put("Z", null);
-        row.put("Geo", "");
-        return row;
+        for (String e : elements) ensureElementColumn(e);
     }
 
 
@@ -3987,83 +4116,95 @@ public class JavaFx extends Application {
         TabPane tp = new TabPane();
         tp.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
 
+        // Für jedes Ergebnis einen Tab
         for (String name : names) {
             java.util.Map<String, Object> row = concOutputRowByName.get(name);
             if (row == null) continue;
 
-            // TableView mit genau EINER Zeile (der Ergebnis-Zeile) – editierbar
-            TableView<java.util.Map<String, Object>> table = new TableView<>();
+            final String base = baseNameOf(name);
+
+            // --- Datenliste für die Tabelle ---
+            // WICHTIG: KEINE KOPIEN! -> echte Modellobjekte verwenden
+            javafx.collections.ObservableList<java.util.Map<String, Object>> data = FXCollections.observableArrayList();
+
+            // 0) Hauptzeile (live) – echte Referenz
+            data.add(row);
+
+            // 1) Alle bisher gespeicherten Targets dieser Basis (echte Objekte)
+            for (var t : targetsOf(base)) {
+                data.add(t);
+            }
+
+            // Merker: falls später ein neuer Target reinkommt (registerTargetIfSuffix),
+            // können wir live auf diese 'data'-Liste pushen
+            concOpenOutputDataByName.put(base, data);
+
+            // --- TableView ---
+            TableView<java.util.Map<String, Object>> table = new TableView<>(data);
             table.setEditable(true);
             table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
-            javafx.collections.ObservableList<java.util.Map<String, Object>> data = FXCollections.observableArrayList();
-            // Live-Map: direkter Bezug auf die "Master"-Zeile
-            java.util.Map<String, Object> live = new java.util.LinkedHashMap<>(row);
-            data.add(live);
-            table.setItems(data);
-
-            // Helper: generische String-Edit-Spalte
+            // Helper: generische editierbare String-Spalte (versucht Double zu parsen)
             java.util.function.BiConsumer<String, TableView<java.util.Map<String, Object>>> addCol =
                     (colName, tv) -> {
                         TableColumn<java.util.Map<String, Object>, String> c = new TableColumn<>(colName);
+
                         c.setCellValueFactory(cd -> {
                             Object v = cd.getValue().get(colName);
-                            return new javafx.beans.property.SimpleStringProperty(v == null ? "" : String.valueOf(v));
+                            String raw = (v == null) ? "" : String.valueOf(v);
+                            // Nur für "Name": Basis anzeigen, intern aber Rohwert behalten
+                            //String display = "Name".equals(colName) ? baseNameOf(raw) : raw;
+                            //return new javafx.beans.property.SimpleStringProperty(display);
+                            return new javafx.beans.property.SimpleStringProperty(raw);
                         });
+
+                        // Wenn du "Name" editierbar lassen willst: Commit schreibt den Rohwert zurück.
+                        // (Anzeigen bleibt weiter Basis dank valueFactory)
                         c.setCellFactory(TextFieldTableCell.forTableColumn());
                         c.setOnEditCommit(ev -> {
-                            String nv = ev.getNewValue();
-                            Object val;
-                            try {
-                                if (nv == null || nv.isBlank()) {
-                                    val = "";
-                                } else {
-                                    // try number, else keep string
-                                    double d = Double.parseDouble(nv.trim().replace(',', '.'));
-                                    val = d;
-                                }
-                            } catch (Exception ex) {
-                                val = nv;
-                            }
-                            ev.getRowValue().put(colName, val);
-                            row.put(colName, val); // Master-Map aktualisieren
+                            String newText = ev.getNewValue(); // was der User getippt hat (evtl. mit/ohne Suffix)
+                            // Im Modell bleibt der echte Text stehen:
+                            ev.getRowValue().put(colName, newText);
                         });
+
                         tv.getColumns().add(c);
                     };
 
-            // Spalten-Reihenfolge: Name | (Elemente sortiert) | Z | Geo
-            java.util.List<String> keys = new java.util.ArrayList<>(row.keySet());
-            // Basisfelder
-            boolean hasZ = row.containsKey("Z");
-            boolean hasGeo = row.containsKey("Geo");
-            keys.remove("Name");
-            keys.remove("Z");
-            keys.remove("Geo");
 
-            // Elementspalten (heuristisch: 1- oder 2-buchstabige Symbole)
-            java.util.List<String> elementCols = new java.util.ArrayList<>();
-            for (String k : keys) {
-                if (k != null && k.matches("[A-Z][a-z]?")) elementCols.add(k);
-            }
-            // übrige (falls es noch andere Felder gibt)
-            java.util.List<String> others = new java.util.ArrayList<>(keys);
-            others.removeAll(elementCols);
+            // Spalten-Rebuild in gewünschter Reihenfolge: Name | Elemente (nach Z) | Z | Geo
+            Runnable rebuildColumns = () -> {
+                table.getColumns().clear();
 
-            // sortieren (für saubere Darstellung)
-            java.util.Collections.sort(elementCols, String.CASE_INSENSITIVE_ORDER);
-            java.util.Collections.sort(others, String.CASE_INSENSITIVE_ORDER);
+                boolean hasZ   = row.containsKey("Z");
+                boolean hasGeo = row.containsKey("Geo");
 
-            // sicherstellen, dass Name existiert
-            if (!row.containsKey("Name")) row.put("Name", name);
+                // 1) Name
+                addCol.accept("Name", table);
 
-            addCol.accept("Name", table);
-            for (String k : elementCols) addCol.accept(k, table);
-            // sonstige (falls vorhanden)
-            for (String k : others) addCol.accept(k, table);
-            if (hasZ)   addCol.accept("Z", table);
-            if (hasGeo) addCol.accept("Geo", table);
+                // 2) Element-Spalten erkennen (echte Elementsymbole), nach Z sortieren
+                java.util.List<String> elementCols = new java.util.ArrayList<>();
+                for (String k : row.keySet()) {
+                    if (k == null) continue;
+                    if (k.equals("Name") || k.equals("Z") || k.equals("Geo")) continue;
+                    if (!k.matches("[A-Z][a-z]?")) continue;
+                    if (!isEnumElement(k)) continue; // nur echte Elemente zulassen
+                    elementCols.add(k);
+                }
+                elementCols.sort(java.util.Comparator.comparingInt(JavaFx::enumIndex));
+                for (String k : elementCols) addCol.accept(k, table);
 
-            // Controls unter der Tabelle: neue Element-Spalte + Target-Zeile (nur Anzeigezweck)
+                // 3) Z, Geo
+                if (hasZ)   addCol.accept("Z", table);
+                if (hasGeo) addCol.accept("Geo", table);
+            };
+
+            rebuildColumns.run();
+
+            concPopupRebuildByBase.put(base, () -> { rebuildColumns.run(); table.refresh(); });
+
+
+
+            // --- Controls unter der Tabelle ---
             TextField tfNewElem = new TextField();
             tfNewElem.setPromptText("Add element column (e.g., Cu)");
             Button btnAddElem = new Button("Add");
@@ -4072,36 +4213,68 @@ public class JavaFx extends Application {
                 if (k == null) return;
                 k = k.trim();
                 if (!k.matches("[A-Z][a-z]?")) return;
-                if (row.containsKey(k)) return;
-
-                row.put(k, 0.0);
-                // neue Spalte ans TableView anhängen
-                addCol.accept(k, table);
+                if (!isEnumElement(k)) return;
+                if (!row.containsKey(k)) row.put(k, 0.0);      // im Hauptschema anlegen
+                rebuildColumns.run();
                 table.refresh();
             });
 
             Button btnAddTarget = new Button("Add target row");
             btnAddTarget.setOnAction(e -> {
-                // zweite Zeile als "Target" zur Anzeige hinzufügen
-                java.util.Map<String, Object> target = new java.util.LinkedHashMap<>();
-                target.put("Name", "Target");
-                // gleiche Spalten wie die erste Zeile
+                // Namen generieren nach deinem Schema: base, base (2), (3), ...
+                String targetName = nextUniqueName(base);
+
+                var target = new java.util.LinkedHashMap<String, Object>();
+                target.put("Name", targetName);
+
+                // Sichtbare Spalten vorbelegen (leer ist ok)
                 for (TableColumn<?, ?> tc : table.getColumns()) {
                     String colName = tc.getText();
                     if (!"Name".equals(colName)) target.putIfAbsent(colName, "");
                 }
-                data.add(target);
+
+                // 1) Persistentes Model-Append
+                targetsOf(base).add(target);
+
+                // 2) Live in die Tabelle
+                table.getItems().add(target);
             });
 
-            HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget);
+            Button btnDelTarget = new Button("Remove selected");
+            btnDelTarget.setOnAction(e -> {
+                var sel = new java.util.ArrayList<>(table.getSelectionModel().getSelectedItems());
+                if (sel.isEmpty()) return;
+
+                // Hauptzeile (Index 0) nie löschen
+                sel.removeIf(rowMap -> rowMap == table.getItems().get(0));
+
+                // aus Tabelle & Modell entfernen
+                table.getItems().removeAll(sel);
+                var modelTargets = targetsOf(base);
+                modelTargets.removeAll(sel);
+            });
+
+            HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget, btnDelTarget);
             controls.setAlignment(Pos.CENTER_LEFT);
 
             VBox content = new VBox(10, table, controls);
             content.setPadding(new Insets(12));
             VBox.setVgrow(table, Priority.ALWAYS);
 
-            Tab tab = new Tab(name, content);
+            //Tab tab = new Tab(name, content);
+            Tab tab = new Tab(baseNameOf(name), content);
+
+
             tab.setClosable(true);
+
+            // Beim Schließen: den Live-Merker (nur) für dieses base entfernen
+            //tab.setOnClosed(ev -> concOpenOutputDataByName.remove(base));
+
+            tab.setOnClosed(ev -> {
+                concOpenOutputDataByName.remove(base);
+                concPopupRebuildByBase.remove(base);
+            });
+
             tp.getTabs().add(tab);
         }
 
@@ -4113,103 +4286,103 @@ public class JavaFx extends Application {
 
 
 
-
-
-
-    private void parseDarkElems(String text, java.util.List<String> elems, java.util.List<Integer> ints) {
-        elems.clear(); ints.clear();
-        if (text == null || text.isBlank()) return;
-        String s = text.trim();
-        // Split per Komma
-        for (String part : s.split(",")) {
-            String t = part.trim();
-            if (t.isEmpty()) continue;
-            // Format "Sym:Int"
-            int idx = t.indexOf(':');
-            if (idx < 0) continue;
-            String sym = t.substring(0, idx).trim();
-            String num = t.substring(idx+1).trim();
-            if (sym.isEmpty() || num.isEmpty()) continue;
-
-            // Symbol robust normalisieren: erstes groß, zweites klein (falls vorhanden)
-            if (sym.length() == 1) sym = sym.substring(0,1).toUpperCase(java.util.Locale.ROOT);
-            else if (sym.length() >= 2) sym = sym.substring(0,1).toUpperCase(java.util.Locale.ROOT) + sym.substring(1).toLowerCase(java.util.Locale.ROOT);
-
-            try {
-                int val = Integer.parseInt(num.replace("_","").replace(" ", ""));
-                elems.add(sym);
-                ints.add(val);
-            } catch (Exception ignore) {}
-        }
-    }
-
     // Dark: Binder-Anteil (z.B. "1.04/5.52" oder "0.1884")
     private TextField tfDarkBinderFrac;
 
 
-    /** parsedark: akzeptiert "O", "O=1", "O:1", "O:H=1:2", "O=1, H=2" usw. */
-    private static java.util.Map<String, Double> parseDarkElemsWithRatios(String text) {
-        java.util.Map<String, Double> out = new java.util.LinkedHashMap<>();
-        if (text == null || text.isBlank()) return out;
-        String s = text.trim();
+    private void registerTargetIfSuffix(String uniqueName, java.util.Map<String,Object> rowMap) {
+        if (!hasSuffix(uniqueName)) return;
+        String base = baseNameOf(uniqueName);
+        if (base == null) return;
 
-        // Fall 1: "O:H=1:2" -> split links/rechts vom '='
-        if (s.contains("=") && (s.contains(":") || s.contains(","))) {
-            String[] parts = s.split("=");
-            if (parts.length == 2) {
-                String left = parts[0].trim();   // "O:H" oder "O, H"
-                String right = parts[1].trim();  // "1:2" oder "1,2"
+        // Snapshot der erzeugten Zeile erstellen, aber mit "Name" = uniqueName
+        var targetRow = new java.util.LinkedHashMap<String,Object>(rowMap);
+        targetRow.put("Name", uniqueName);
 
-                String[] syms = left.split("[:;,]\\s*");
-                String[] nums = right.split("[:;,]\\s*");
-                int n = Math.min(syms.length, nums.length);
-                for (int i = 0; i < n; i++) {
-                    String sym = normalizeSym(syms[i]);
-                    Double val = safeDouble(nums[i]);
-                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
-                }
-                return normalizeWeights(out);
+        // 1) persistente Liste je Basis erweitern
+        targetsOf(base).add(targetRow);
+
+        // 2) Falls Popup für 'base' offen → live anhängen (aber keine Duplikate)
+        var dataList = concOpenOutputDataByName.get(base);
+        if (dataList != null) {
+            boolean exists = dataList.stream().anyMatch(m -> uniqueName.equals(String.valueOf(m.get("Name"))));
+            if (!exists) dataList.add(targetRow);
+        }
+    }
+
+
+    private static java.util.List<String> verbindungSymbole(Verbindung v){
+        if (v == null) return java.util.List.of();
+        String[] syms = v.getSymbole();
+        return (syms == null) ? java.util.List.of() : java.util.Arrays.asList(syms);
+    }
+
+    // Neu oben in der Klasse:
+    private final java.util.Map<String, Runnable> concPopupRebuildByBase = new java.util.HashMap<>();
+
+    private void addMissingDarkColumns(
+            String base,
+            java.util.Map<String,Object> row,
+            java.util.Map<String,Double> darkWeights,
+            Verbindung binder
+    ){
+        // 1) Welche zusätzlichen Elemente brauchen wir?
+        java.util.LinkedHashSet<String> extra = new java.util.LinkedHashSet<>();
+        if (darkWeights != null) extra.addAll(darkWeights.keySet());
+        if (binder != null) extra.addAll(verbindungSymbole(binder));
+        if (extra.isEmpty()) return;
+
+        // 2a) In der aktuellen Ergebniszeile garantieren
+        for (String e : extra) {
+            if (e == null || !e.matches("[A-Z][a-z]?")) continue;
+            row.putIfAbsent(e, 0.0);
+        }
+
+        // 2b) **NEU**: In ALLEN bestehenden Ergebniszeilen mit demselben Basisnamen ergänzen
+        for (var entry : concOutputRowByName.entrySet()) {
+            String name = entry.getKey();
+            if (!base.equals(baseNameOf(name))) continue;
+            var r = entry.getValue();
+            for (String e : extra) {
+                if (e == null || !e.matches("[A-Z][a-z]?")) continue;
+                r.putIfAbsent(e, 0.0);
             }
         }
 
-        // Fall 2: Kommagetrennte Paare: "O=1, H=2" oder "O:1, H:2" oder "O, H"
-        for (String part : s.split(",")) {
-            String t = part.trim();
-            if (t.isEmpty()) continue;
-
-            if (t.contains("=")) {
-                String[] kv = t.split("=");
-                if (kv.length == 2) {
-                    String sym = normalizeSym(kv[0]);
-                    Double val = safeDouble(kv[1]);
-                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
-                    continue;
+        // 2c) **NEU**: In allen gespeicherten Target-Zeilen derselben Basis ergänzen
+        var targets = targetsOf(base);
+        if (targets != null) {
+            for (var t : targets) {
+                for (String e : extra) {
+                    if (e == null || !e.matches("[A-Z][a-z]?")) continue;
+                    t.putIfAbsent(e, "");
                 }
             }
-            if (t.contains(":")) {
-                String[] kv = t.split(":");
-                if (kv.length == 2) {
-                    String sym = normalizeSym(kv[0]);
-                    Double val = safeDouble(kv[1]);
-                    if (sym != null && val != null) out.merge(sym, val, Double::sum);
-                    else if (sym != null) out.merge(sym, 1.0, Double::sum);
-                    continue;
-                }
-            }
-            // nur ein Symbol -> Gewicht 1
-            String sym = normalizeSym(t);
-            if (sym != null) out.merge(sym, 1.0, Double::sum);
         }
-        return normalizeWeights(out);
+
+        // 3) Haupttabelle (falls vorhanden) – Spalten sicherstellen
+        ensureElementColumns(extra);
+
+        // 4) Falls ein Output-Popup für 'base' offen ist → alle Zeilen dort ergänzen
+        var dataList = concOpenOutputDataByName.get(base);
+        if (dataList != null) {
+            for (var r : dataList) {
+                for (String e : extra) {
+                    if (!r.containsKey(e)) r.put(e, "");
+                }
+            }
+        }
+
+        // 5) Spaltenlayout im Popup neu aufbauen (falls registriert)
+        var rebuild = concPopupRebuildByBase.get(base);
+        if (rebuild != null) rebuild.run();
     }
 
-    private static String normalizeSym(String s) {
-        if (s == null) return null;
-        s = s.trim();
-        if (s.isEmpty()) return null;
-        if (s.length() == 1) return s.substring(0,1).toUpperCase(java.util.Locale.ROOT);
-        return s.substring(0,1).toUpperCase(java.util.Locale.ROOT) + s.substring(1).toLowerCase(java.util.Locale.ROOT);
-    }
+
+
+
+
+
     private static Double safeDouble(String s) {
         try { return Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception e) { return null; }
     }

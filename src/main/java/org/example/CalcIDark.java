@@ -880,4 +880,82 @@ public class CalcIDark {
     }
 
 
+    // Ein kleines DTO für die UI
+    public static class DarkUIResult {
+        public final java.util.LinkedHashMap<String,Object> row; // "Name", Elemente…, "Z", "Geo"
+        public final double[] gesamtKonz;                        // in 0..1
+        public final double zMittel;
+        public final double geo;
+
+        public DarkUIResult(java.util.LinkedHashMap<String,Object> row,
+                            double[] gesamtKonz, double zMittel, double geo) {
+            this.row = row; this.gesamtKonz = gesamtKonz; this.zMittel = zMittel; this.geo = geo;
+        }
+    }
+
+    /** Wie printOptimizedResult(...), nur ohne Console-Output – liefert alles für die UI. */
+    public DarkUIResult computeOptimizedResultForUI(
+            String resultName,
+            double[] optimizedParams,
+            double[] lowVerteilung,
+            double zMittelwert
+    ) {
+        double[] lowVerteilungNeu = appendZeros(lowVerteilung, addedDark);
+        double[] optimizedParamsGanz = ergebnisEinfach(optimizedParams);
+
+        // 1) Z-Split / Binder
+        java.util.List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
+        int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
+        SplitResult z_split = splitByZ(zNumbersArr, darkI);
+
+        double konzBinder = binderWerte.total();
+        double zBinder    = binderWerte.zAvg();
+
+        double Z_mittelwerte_ohne_Binder = (zMittelwert - konzBinder * zBinder) / (1 - konzBinder);
+        double[] alg_angepasst = applyZAnpassen(optimizedParamsGanz, lowVerteilungNeu, Z_mittelwerte_ohne_Binder);
+        for (int i = 0; i < alg_angepasst.length; i++) alg_angepasst[i] *= (1 - konzBinder);
+
+        // 2) Konzentrationsvektor (inkl. Binder) zusammensetzen
+        double sumParams = 0.0; for (double v : alg_angepasst) sumParams += v;
+        sumParams += konzBinder;
+        double[] konz_low  = lowKonBeBinderAware(alg_angepasst[0] + konzBinder, lowVerteilungNeu, sumParams);
+        double[] konz_high = java.util.Arrays.copyOfRange(alg_angepasst, 1, alg_angepasst.length);
+
+        double[] gesamtKonz = new double[z_split.indicesLow.length + z_split.indicesHigh.length];
+        for (int i = 0; i < z_split.indicesLow.length;  i++) gesamtKonz[z_split.indicesLow[i]]  = konz_low[i];
+        for (int i = 0; i < z_split.indicesHigh.length; i++) gesamtKonz[z_split.indicesHigh[i]] = konz_high[i];
+
+        // 3) Z_mittel und Geo
+        double ordnungszahl_summe = 0.0, konz_summe = 0.0;
+        for (int i = 0; i < gesamtKonz.length; i++) { ordnungszahl_summe += gesamtKonz[i] * zNumbersArr[i]; konz_summe += gesamtKonz[i]; }
+        double z_mittel_opt = ordnungszahl_summe / konz_summe;
+
+        double[] berechneteIntensitaet = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz);
+        double[] IbHigh = new double[z_split.indicesHigh.length];
+        for (int i = 0; i < z_split.indicesHigh.length; i++) IbHigh[i] = berechneteIntensitaet[z_split.indicesHigh[i]];
+        double geo = geoIbIg(IbHigh);
+        double[] _unused = calcDark.berechneSummenintensitaetMitKonz(gesamtKonz, geo); // nur zur Konsistenz
+
+        // 4) UI-Row: Name, Elemente (nach Z sortiert), Z, Geo
+        Integer[] order = new Integer[gesamtKonz.length];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        java.util.Arrays.sort(order, java.util.Comparator.comparingInt(i -> zNumbersArr[i]));
+
+        java.util.List<Element> elems = this.calcDark.getProbe().getElemente();
+
+        java.util.LinkedHashMap<String,Object> row = new java.util.LinkedHashMap<>();
+        row.put("Name", resultName);
+        for (int idx : order) {
+            String sym = elems.get(idx).getSymbol();
+            double pct = gesamtKonz[idx] * 100.0;
+            row.put(sym, pct);
+        }
+        row.put("Z", z_mittel_opt);
+        row.put("Geo", geo);
+
+        return new DarkUIResult(row, gesamtKonz, z_mittel_opt, geo);
+    }
+
+
+
 }

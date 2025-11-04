@@ -16,6 +16,8 @@ import javafx.scene.control.cell.ComboBoxTableCell;
 import javafx.scene.control.cell.TextFieldTableCell;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -42,12 +44,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import javafx.util.StringConverter;
 
 // Preferences
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.prefs.Preferences;
-
-
-import java.util.Objects;
 
 public class JavaFx extends Application {
 
@@ -112,9 +110,7 @@ public class JavaFx extends Application {
     //private final javafx.collections.ObservableList<String> concResultNames = FXCollections.observableArrayList();
     //private final java.util.Map<String, java.util.Map<String, Object>> concOutputRowByName = new java.util.LinkedHashMap<>();
 
-    // Ergebnisse: pro Probenname eine Liste von Zeilen (Maps)
-    private final javafx.collections.ObservableList<String> concResultNames = FXCollections.observableArrayList();
-    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String, Object>>> concOutputRowsByName = new java.util.LinkedHashMap<>();
+
 
 
 
@@ -123,18 +119,9 @@ public class JavaFx extends Application {
     private VBox concResultsBox;                    // Container (Label + ListView)
 
 
-    // Ergebnisse (berechnete Datensätze): sichtbare Namen + zugehörige Datenzeile
-    private final java.util.Map<String, java.util.Map<String, Object>> concOutputRowByName = new java.util.LinkedHashMap<>();
 
 
 
-
-    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String,Object>>>
-            concTargetsByBase = new java.util.LinkedHashMap<>();
-
-    private javafx.collections.ObservableList<java.util.Map<String,Object>> targetsOf(String base){
-        return concTargetsByBase.computeIfAbsent(base, k -> FXCollections.observableArrayList());
-    }
 
 
 
@@ -147,30 +134,29 @@ public class JavaFx extends Application {
     private static boolean hasSuffix(String name) {
         return name != null && name.matches(".*\\(\\d+\\)\\s*$");
     }
-    private static java.util.Map<String,Object> asTargetRow(java.util.Map<String,Object> src, String fromName) {
-        java.util.Map<String,Object> target = new java.util.LinkedHashMap<>(src);
-        target.put("Name",  fromName); // oder: "Target ("+fromName+")"
-        return target;
-    }
 
-
-
-    // Sichtbare Result-Liste: nur Basen
+    // Sichtbare Basen-Liste für den Results-Block
     private final javafx.collections.ObservableList<String> concBaseNames = FXCollections.observableArrayList();
-    // Merker: welche eindeutige Version (z.B. "test (4)") ist die jüngste für diese Basis ("test")?
-    private final java.util.Map<String,String> lastUniqueByBase = new java.util.LinkedHashMap<>();
 
 
 
 
 
 
+
+    // === NEU: zentrale Struktur – genau EINE Liste je Basisname ===
+    private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String, Object>>> resultsByBase = new java.util.LinkedHashMap<>();
+
+    private javafx.collections.ObservableList<java.util.Map<String, Object>> listForBase(String base) {
+        return resultsByBase.computeIfAbsent(base, b -> javafx.collections.FXCollections.observableArrayList());
+    }
 
 
 
 
     @Override
     public void start(Stage stage) {
+
         // ----- Menus -----
         Menu fileMenu = new Menu("File");
         MenuItem exit = new MenuItem("Exit");
@@ -193,6 +179,8 @@ public class JavaFx extends Application {
 
 
 
+
+
         // ----- Tabs -----
         TabPane tabs = new TabPane(
                 buildPropertiesTab(),
@@ -211,11 +199,44 @@ public class JavaFx extends Application {
 
         Scene scene = new Scene(root, 1200, 800);
 
-        // Dark mode CSS (inline via data: URI)
+
         String darkCss = """
-                .root { -fx-base:#2b2b2b; -fx-background:#2b2b2b; -fx-control-inner-background:#3c3f41; -fx-text-fill:white; }
-                .label, .menu, .menu-item, .tab-label { -fx-text-fill:white; }
-                """;
+    .root {
+        /* Basisfarben */
+        -fx-base: #2b2b2b;                      /* veraltet, wird aber von Modena-Lookups genutzt */
+        -fx-background: #2b2b2b;                /* App-Hintergrund */
+        -fx-control-inner-background: #3c3f41;  /* Hintergründe in Controls (Table, TextField, …) */
+
+        /* WICHTIG: Looked-up colors bereitstellen (Modena-abhängig) */
+        -fx-box-border: derive(-fx-base, 35%);
+        -fx-text-background-color: derive(-fx-base, 80%);
+        -fx-shadow-highlight-color: transparent;
+
+        /* Standard-Schriftfarbe */
+        -fx-text-fill: white;
+    }
+
+    /* Texte in gängigen Controls */
+    .label, .menu, .menu-item, .tab-label, .table-view, .list-view, .text-field, .text-area {
+        -fx-text-fill: white;
+    }
+
+    /* Tabellen/Listen-Kontraste */
+    .table-row-cell, .list-cell {
+        -fx-background-color: -fx-control-inner-background;
+        -fx-text-fill: white;
+        -fx-border-color: -fx-box-border;
+    }
+
+    /* Kopfzeilen/Headers von Tabellen */
+    .column-header, .table-view .column-header-background {
+        -fx-background-color: derive(-fx-base, 15%);
+        -fx-text-fill: white;
+        -fx-border-color: -fx-box-border;
+    }
+    """;
+
+
         darkModeToggle.selectedProperty().addListener((obs, o, on) -> {
             scene.getStylesheets().clear();
             if (on) scene.getStylesheets().add("data:text/css," + darkCss.replace("\n", "%0A").replace(" ", "%20"));
@@ -2578,7 +2599,74 @@ public class JavaFx extends Application {
 
         node.putBoolean("autoLoadLast", s.autoLoadLast != null && s.autoLoadLast);
 
-        // (deine Filter/Segmente speicherst du weiter wie bisher)
+        var tubeFiltersNode = node.node("tubeFilters");
+        deleteChildren(tubeFiltersNode);
+        if (s.tubeMatFilters != null) {
+            tubeFiltersNode.putInt("count", s.tubeMatFilters.size());
+            for (int i = 0; i < s.tubeMatFilters.size(); i++) {
+                var d = s.tubeMatFilters.get(i);
+                var c = tubeFiltersNode.node(Integer.toString(i));
+                c.put("formula", d.formula == null ? "" : d.formula);
+                c.putDouble("density", d.density);
+                c.putDouble("thicknessCm", d.thicknessCm);
+                c.putBoolean("use", d.use);
+            }
+        }
+
+        // --- NEU: Material-Filter (Detector) schreiben ---
+        var detFiltersNode = node.node("detFilters");
+        deleteChildren(detFiltersNode);
+        if (s.detMatFilters != null) {
+            detFiltersNode.putInt("count", s.detMatFilters.size());
+            for (int i = 0; i < s.detMatFilters.size(); i++) {
+                var d = s.detMatFilters.get(i);
+                var c = detFiltersNode.node(Integer.toString(i));
+                c.put("formula", d.formula == null ? "" : d.formula);
+                c.putDouble("density", d.density);
+                c.putDouble("thicknessCm", d.thicknessCm);
+                c.putBoolean("use", d.use);
+            }
+        }
+
+        // --- NEU: Funktions-Segmente (Tube) schreiben ---
+        var tubeFuncNode = node.node("tubeFuncSegs");
+        deleteChildren(tubeFuncNode);
+        if (s.tubeFuncSegs != null) {
+            tubeFuncNode.putInt("count", s.tubeFuncSegs.size());
+            for (int i = 0; i < s.tubeFuncSegs.size(); i++) {
+                var d = s.tubeFuncSegs.get(i);
+                var c = tubeFuncNode.node(Integer.toString(i));
+                c.putBoolean("enabled", d.enabled);
+                c.put("expr", d.expr == null ? "" : d.expr);
+                c.putDouble("a", d.a);
+                c.putDouble("b", d.b);
+                c.putBoolean("inclA", d.inclA);
+                c.putBoolean("inclB", d.inclB);
+                c.putBoolean("clamp", d.clamp);
+                c.putDouble("yMin", d.yMin);
+                c.putDouble("yMax", d.yMax);
+            }
+        }
+
+        // --- NEU: Funktions-Segmente (Detector) schreiben ---
+        var detFuncNode = node.node("detFuncSegs");
+        deleteChildren(detFuncNode);
+        if (s.detFuncSegs != null) {
+            detFuncNode.putInt("count", s.detFuncSegs.size());
+            for (int i = 0; i < s.detFuncSegs.size(); i++) {
+                var d = s.detFuncSegs.get(i);
+                var c = detFuncNode.node(Integer.toString(i));
+                c.putBoolean("enabled", d.enabled);
+                c.put("expr", d.expr == null ? "" : d.expr);
+                c.putDouble("a", d.a);
+                c.putDouble("b", d.b);
+                c.putBoolean("inclA", d.inclA);
+                c.putBoolean("inclB", d.inclB);
+                c.putBoolean("clamp", d.clamp);
+                c.putDouble("yMin", d.yMin);
+                c.putDouble("yMax", d.yMax);
+            }
+        }
 
         prefs.put("lastProfile", name);
     }
@@ -2948,13 +3036,12 @@ public class JavaFx extends Application {
                 s.applyToUI(this);
                 prefs.put("lastProfile", name);
 
-                Alert ok = new Alert(Alert.AlertType.INFORMATION,
-                        "Profile \"" + name + "\" has been loaded.");
-                ok.setHeaderText(null);
-                ok.setTitle("Profile Loaded");
                 var w = btnLoadProfile.getScene() != null ? btnLoadProfile.getScene().getWindow() : null;
-                if (w != null) ok.initOwner(w);
-                ok.showAndWait();
+                showAutoCloseInfo("Profile Loaded",
+                        "Profile \"" + name + "\" has been loaded.",
+                        w,
+                        0.7); // 1 Sekunde
+
             } catch (Exception ex) {
                 Alert err = new Alert(Alert.AlertType.ERROR,
                         "Failed to load profile \"" + name + "\":\n" + ex.getMessage());
@@ -3283,12 +3370,12 @@ public class JavaFx extends Application {
                     setText(null);
                     setTooltip(null);
                 } else {
-                    setText(base); // nur Basis anzeigen
-                    String full = lastUniqueByBase.get(base);
-                    setTooltip(full != null && !full.equals(base) ? new Tooltip(full) : null);
+                    setText(base);     // nur Basis anzeigen
+                    setTooltip(null);  // KEIN lastUniqueByBase mehr
                 }
             }
         });
+
 
 
 
@@ -3299,19 +3386,12 @@ public class JavaFx extends Application {
             if (e.getClickCount() == 2) {
                 String base = concResultsListView.getSelectionModel().getSelectedItem();
                 if (base != null) {
-                    // bevorzugt die Basisspur (z.B. "test")
-                    String nameToOpen = concOutputRowByName.containsKey(base)
-                            ? base
-                            : lastUniqueByBase.get(base); // Fallback: neueste Version, falls Basis fehlt
-                    if (nameToOpen != null && concOutputRowByName.containsKey(nameToOpen)) {
-                        openOutputPopup(java.util.List.of(nameToOpen),
-                                concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null);
-                    }
+                    javafx.stage.Window w = concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null;
+                    openOutputPopupForBase(java.util.List.of(base), w);
                 }
-
-
             }
         });
+
 
         concResultsBox = new VBox(6, resultsTitle, concResultsListView);
         concResultsBox.setPadding(new Insets(10, 0, 0, 0));
@@ -3541,12 +3621,12 @@ public class JavaFx extends Application {
             ));
             cTrans.setEditable(true);
 
-            // Intensität (editierbares Number-Feld)
+// Intensität (editierbares Number-Feld)
             TableColumn<ConcRow, Number> cInt = new TableColumn<>("Intensität");
             cInt.setCellValueFactory(data -> data.getValue().intensity);
             cInt.setCellFactory(TextFieldTableCell.forTableColumn(new StringConverter<Number>() {
                 @Override public String toString(Number n) {
-                    return n == null ? "" : String.format(java.util.Locale.ROOT, "%.6g", n.doubleValue());
+                    return n == null ? "" : Double.toString(n.doubleValue());
                 }
                 @Override public Number fromString(String s) {
                     if (s == null || s.isBlank()) return 0.0;
@@ -3714,15 +3794,37 @@ public class JavaFx extends Application {
             double tots_um    = parseOrDefault(inactiveLayer, 0.05);
             double act_mm     = parseOrDefault(activeLayer, 3.0);
 
-            // aktive Filter
-            java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
-            for (Verbindung v : tubeFilterVerbindungen) if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
-            if (activeTubeFilters.isEmpty()) {
-                Verbindung dummy = buildVerbindungFromSpec("Al", 2.70, 0.0);
-                activeTubeFilters.add(dummy);
+
+
+
+
+            List<Verbindung> activeTubeFilters = new ArrayList<>();
+            for (Verbindung v : tubeFilterVerbindungen)
+                if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+
+            boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+            boolean haveMatTube  = !activeTubeFilters.isEmpty();
+            if (!haveMatTube && haveFuncTube) {
+                activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
             }
-            java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
-            for (Verbindung v : detFilterVerbindungen) if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+            if (haveFuncTube) {
+                applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+            }
+
+// Detektorfilter
+            List<Verbindung> activeDetFilters = new ArrayList<>();
+            for (Verbindung v : detFilterVerbindungen)
+                if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+
+            boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+            boolean haveMatDet  = !activeDetFilters.isEmpty();
+            if (!haveMatDet && haveFuncDet) {
+                activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+            }
+            if (haveFuncDet) {
+                applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+            }
+
 
             // 4) Probe + Übergänge
             Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
@@ -3732,7 +3834,7 @@ public class JavaFx extends Application {
             }
 
             // 5) Ergebnis-Name (Dateiname, bei Bedarf (2), (3), …)
-            String baseName = file.getFileName().toString();
+            String baseName = stripExt(file.getFileName().toString());
             String uniqueName = nextUniqueName(baseName);
 
 
@@ -3839,31 +3941,40 @@ public class JavaFx extends Application {
                         Z                     // zMittelwert-Vorgabe
                 );
 
-// 5) In Deine Ergebnis-Maps/Liste eintragen
+                // Alle numerischen Werte in res.row auf 2 Nachkommastellen runden (Name bleibt unberührt)
+                res.row.replaceAll((k, v) -> {
+                    if (v instanceof Number && !"Name".equals(k) && !"Geo".equals(k)) {
+                        return round2(((Number) v).doubleValue());
+                    }
+                    return v;
+                });
+
+
                 String base = baseNameOf(uniqueName);
+                var list = listForBase(base);
 
-// fehlende Spalten garantieren (Dark-Elemente + Binder-Elemente)
-                addMissingDarkColumns(base, res.row, darkWeights, binder);
-
-
-                concOutputRowByName.put(uniqueName, res.row);
-                concResultNames.add(uniqueName);
-
-                registerTargetIfSuffix(uniqueName, res.row);
-
-
-// Optional, damit spätere Popups alle Elementspalten haben:
+// (optional) Spalten sicherstellen
                 ensureElementColumns(res.row.keySet().stream()
                         .filter(k -> k.matches("[A-Z][a-z]?"))
                         .toList());
 
+// Dark-/Binder-Spalten in **dieser Basis** auffüllen
+                addMissingDarkColumnsForBase(base, res.row, darkWeights, binder);
 
-// jüngste eindeutige Version merken
-                lastUniqueByBase.put(base, uniqueName);
-// Basis nur einmal in die sichtbare Liste
+// Erste Zeile = Basis (ohne Suffix)
+                if (list.isEmpty()) {
+                    res.row.put("Name", base);
+                    list.add(res.row);
+                } else {
+                    var target = new java.util.LinkedHashMap<String,Object>(res.row);
+                    target.put("Name", nextUniqueName(base));
+                    list.add(target);
+                }
+
+// Basenliste aktualisieren
                 if (!concBaseNames.contains(base)) concBaseNames.add(base);
 
-// UI aktualisieren
+// UI refresh
                 if (concResultsListView != null) {
                     concResultsListView.refresh();
                     concResultsListView.getSelectionModel().select(base);
@@ -3884,11 +3995,11 @@ public class JavaFx extends Application {
                         activeTubeFilters, activeDetFilters
                 );
 
-// 1) Konzentrationen (in %) berechnen
+                // 1) Konzentrationen (in %) berechnen
                 PreparedValues pv = calc.werteVorbereitenAlle();
                 double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000); // [%]
 
-// 2) Z̄ aus den berechneten Konzentrationen (gewichtetes Mittel)
+                // 2) Z̄ aus den berechneten Konzentrationen (gewichtetes Mittel)
                 java.util.List<Integer> zNumsList = probe.getElementZNumbers();
                 int[] zNums = zNumsList.stream().mapToInt(Integer::intValue).toArray();
                 double sumK = 0.0, sumZK = 0.0;
@@ -3898,10 +4009,10 @@ public class JavaFx extends Application {
                 }
                 double zMean = (sumK > 0) ? (sumZK / sumK) : Double.NaN;
 
-// 3) Geo als Mittelwert aus calc.geometriefaktor(origKonz, berechInt)
+                // 3) Geo als Mittelwert aus calc.geometriefaktor(origKonz, berechInt)
                 double[] berechInt = calc.berechneSummenintensitaetMitKonz(relKonz); // konsistent zu deinem Beispiel
 
-// origKonz: wenn verfügbar, nimm calc.konzentration; sonst aus relKonz (in 0..1) ableiten
+                // origKonz: wenn verfügbar, nimm calc.konzentration; sonst aus relKonz (in 0..1) ableiten
                 double[] origKonz = calc.konzentration;
                 if (origKonz == null || origKonz.length != relKonz.length) {
                     origKonz = java.util.Arrays.stream(relKonz).map(v -> v / 100.0).toArray();
@@ -3910,46 +4021,61 @@ public class JavaFx extends Application {
                 double[] geoArr = calc.geometriefaktor(origKonz, berechInt);
                 double geoMean = java.util.Arrays.stream(geoArr).average().orElse(Double.NaN);
 
-// 4) Ergebniszeile aufbauen: Name | Elemente (nach Z) | Z | Geo
+                // 4) Ergebniszeile aufbauen: Name | Elemente (nach Z) | Z | Geo
                 java.util.Map<String,Object> rowOut = new java.util.LinkedHashMap<>();
                 rowOut.put("Name", uniqueName);
 
-// Elemente nach Z sortieren
+                // Elemente nach Z sortieren
                 java.util.List<String> elemsByZ = new java.util.ArrayList<>(elementSymbole);
                 elemsByZ.sort(java.util.Comparator.comparingInt(sym ->
                         zNums[ elementSymbole.indexOf(sym) ]   // nutzt Probe-Reihenfolge → zNums passt
                 ));
-// Konzentrationen eintragen
+                // Konzentrationen eintragen
                 for (String sym : elemsByZ) {
                     int idx = elementSymbole.indexOf(sym);
-                    if (idx >= 0 && idx < relKonz.length) rowOut.put(sym, relKonz[idx]);
+                    if (idx >= 0 && idx < relKonz.length) rowOut.put(sym, round2(relKonz[idx]));
                 }
 
-// Z und Geo ans Ende
-                rowOut.put("Z", zMean);
+                // Z und Geo ans Ende
+                rowOut.put("Z", round2(zMean));
                 rowOut.put("Geo", geoMean);
 
-// 5) Registrieren
-                concOutputRowByName.put(uniqueName, rowOut);
-                concResultNames.add(uniqueName);
+                rowOut.replaceAll((k, v) -> {
+                    if (v instanceof Number && !"Name".equals(k) && !"Geo".equals(k)) {
+                        return round2(((Number) v).doubleValue());
+                    }
+                    return v; // Geo ungerundet speichern
+                });
 
-                registerTargetIfSuffix(uniqueName, rowOut);
-            }
+                String base = baseNameOf(uniqueName);
+                var list = listForBase(base);
 
-            // 7) UI: Result-Liste aktualisieren + den neuen Eintrag auswählen
-            String base = baseNameOf(uniqueName);
-// jüngste eindeutige Version merken
-            lastUniqueByBase.put(base, uniqueName);
-// Basis nur einmal in die sichtbare Liste
-            if (!concBaseNames.contains(base)) concBaseNames.add(base);
+                // (optional) Spalten sicherstellen
+                ensureElementColumns(rowOut.keySet().stream()
+                        .filter(k -> k.matches("[A-Z][a-z]?"))
+                        .toList());
 
-// UI aktualisieren
-            if (concResultsListView != null) {
-                concResultsListView.refresh();
-                concResultsListView.getSelectionModel().select(base);
-                concResultsListView.scrollTo(base);
-            }
+                // Erste Zeile = Basis (ohne Suffix)
+                if (list.isEmpty()) {
+                    rowOut.put("Name", base);
+                    list.add(rowOut);
+                } else {
+                    var target = new java.util.LinkedHashMap<String,Object>(rowOut);
+                    target.put("Name", nextUniqueName(base));
+                    list.add(target);
+                }
 
+                // Basenliste pflegen
+                if (!concBaseNames.contains(base)) concBaseNames.add(base);
+
+                // UI refresh
+                if (concResultsListView != null) {
+                    concResultsListView.refresh();
+                    concResultsListView.getSelectionModel().select(base);
+                    concResultsListView.scrollTo(base);
+                }
+
+            } // <<< ENDE else (NORMAL)
 
         } catch (Throwable ex) {
             ex.printStackTrace();
@@ -3957,52 +4083,53 @@ public class JavaFx extends Application {
                     "Unexpected error in runConcCalculation():\n" + ex.getClass().getSimpleName() + ": " + ex.getMessage()
             ).showAndWait();
         }
-    }
+    } // <<< ENDE der Methode runConcCalculation()
 
 
 
-    // Liefert den nächsten eindeutigen Namen für denselben Basisnamen.
-// Bezieht sowohl concResultNames als auch concOutputRowByName ein (Sicherheit).
     private String nextUniqueName(String base) {
-        int max = -1; // -1 bedeutet: Basisname noch frei
+        var list = listForBase(base);
+        // Wenn die Basisliste leer ist, ist "base" frei
+        if (list.isEmpty()) return base;
+
+        int max = 0; // 0 bedeutet: nackte Basis vorhanden
         java.util.regex.Pattern p = java.util.regex.Pattern.compile("\\((\\d+)\\)\\s*$");
+        boolean hasBase = false;
 
-        // 1) Liste durchsuchen
-        for (String n : concResultNames) {
-            if (!base.equals(baseNameOf(n))) continue;
+        for (var row : list) {
+            String n = String.valueOf(row.getOrDefault("Name", ""));
+            String b = baseNameOf(n);
+            if (!base.equals(b)) continue;
+
             java.util.regex.Matcher m = p.matcher(n);
             if (m.find()) {
                 int k = Integer.parseInt(m.group(1));
                 if (k > max) max = k;
             } else {
-                // nackter Basisname vorhanden
-                max = Math.max(max, 0);
+                hasBase = true;
             }
         }
 
-        // 2) Map-Keys ebenfalls berücksichtigen (falls etwas in der Liste fehlt)
-        for (String n : concOutputRowByName.keySet()) {
-            if (!base.equals(baseNameOf(n))) continue;
-            java.util.regex.Matcher m = p.matcher(n);
-            if (m.find()) {
-                int k = Integer.parseInt(m.group(1));
-                if (k > max) max = k;
-            } else {
-                max = Math.max(max, 0);
-            }
-        }
-
-        if (max < 0) {
-            // Basisname ist komplett frei
-            return base;
-        } else if (max == 0 && !concResultNames.contains(base) && !concOutputRowByName.containsKey(base)) {
-            // Falls aus irgendeinem Grund der nackte Name nicht existiert, gib ihn frei
-            return base;
-        } else {
-            // Nächste freie Nummer
-            return base + " (" + (max + 1) + ")";
-        }
+        if (!hasBase) return base;           // Basiszeile existiert noch nicht
+        return base + " (" + (max + 1) + ")"; // nächster Suffix
     }
+
+
+    private static void showAutoCloseInfo(String title, String message, javafx.stage.Window owner, double seconds) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION, message);
+        a.setHeaderText(null);
+        a.setTitle(title);
+        if (owner != null) a.initOwner(owner);
+        // Optional: modal lassen (Standard) oder nicht:
+        // a.initModality(Modality.NONE);
+
+        a.show(); // nicht showAndWait!
+
+        javafx.animation.PauseTransition pt = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(seconds));
+        pt.setOnFinished(ev -> a.close());
+        pt.play();
+    }
+
 
 
 
@@ -4040,13 +4167,32 @@ public class JavaFx extends Application {
             cZ.setPrefWidth(80);
 
             // Geo (String)
-            TableColumn<java.util.Map<String, Object>, String> cGeo = new TableColumn<>("Geo");
+            TableColumn<Map<String,Object>, String> cGeo = new TableColumn<>("Geo");
             cGeo.setCellValueFactory(param -> {
-                Object v = param.getValue().getOrDefault("Geo", "");
-                return new javafx.beans.property.SimpleStringProperty(v == null ? "" : v.toString());
+                Object v = param.getValue().get("Geo");
+                if (v instanceof Number n) {
+                    return new SimpleStringProperty(formatSci(n.doubleValue()));
+                }
+                return new SimpleStringProperty(v == null ? "" : v.toString());
             });
+
             cGeo.setCellFactory(TextFieldTableCell.forTableColumn());
-            cGeo.setOnEditCommit(ev -> ev.getRowValue().put("Geo", ev.getNewValue()));
+            cGeo.setOnEditCommit(ev -> {
+                String s = ev.getNewValue();
+                Double d = null;
+                try {
+                    if (s != null && !s.isBlank()) {
+                        String t = s.trim()
+                                .toLowerCase(java.util.Locale.ROOT)
+                                .replace(" ", "")      // "5 e-4" -> "5e-4"
+                                .replace(',', '.');    // Dezimalkomma erlauben
+                        d = Double.parseDouble(t);
+                    }
+                } catch (Exception ignore) {}
+                ev.getRowValue().put("Geo", d); // ungerundet speichern
+            });
+
+
             cGeo.setPrefWidth(120);
 
             tblConcOutput.getColumns().addAll(cName, cZ, cGeo);
@@ -4064,35 +4210,36 @@ public class JavaFx extends Application {
     }
 
 
-    /** legt eine (Double-)Elementspalte an, falls noch nicht vorhanden */
     private void ensureElementColumn(String elementSymbol) {
         if (tblConcOutput == null || elementSymbol == null || elementSymbol.isBlank()) return;
-        if (elementSymbol == null || elementSymbol.isBlank()) return;
         if (concOutputElementCols.contains(elementSymbol)) return;
 
         concOutputElementCols.add(elementSymbol);
 
-        TableColumn<java.util.Map<String, Object>, String> c = new TableColumn<>(elementSymbol);
+        TableColumn<Map<String, Object>, String> c = new TableColumn<>(elementSymbol);
         c.setCellValueFactory(param -> {
             Object v = param.getValue().get(elementSymbol);
-            String s = (v == null) ? "" : String.valueOf(v);
-            return new javafx.beans.property.SimpleStringProperty(s);
+            String s;
+            if (v instanceof Number n) {
+                s = String.format(java.util.Locale.ROOT, "%.3f", n.doubleValue());
+            } else {
+                s = (v == null) ? "" : String.valueOf(v);
+            }
+            return new SimpleStringProperty(s);
         });
         c.setCellFactory(TextFieldTableCell.forTableColumn());
         c.setOnEditCommit(ev -> {
             String s = ev.getNewValue();
             Double d = null;
             try { if (s != null && !s.isBlank()) d = Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception ignore) {}
-            ev.getRowValue().put(elementSymbol, d); // null erlaubt
+            ev.getRowValue().put(elementSymbol, d);
         });
         c.setPrefWidth(80);
 
-        // Element-Spalten zwischen Name und Z/Geo einsortieren:
-        // -> aktuelle Columns: [Name, (Elemente...), Z, Geo]
-        // wir fügen vor Z ein
         int zIndex = Math.max(1, tblConcOutput.getColumns().size() - 2);
         tblConcOutput.getColumns().add(zIndex, c);
     }
+
 
     /** stellt sicher, dass alle gewünschten Elementspalten existieren */
     private void ensureElementColumns(java.util.Collection<String> elements) {
@@ -4104,184 +4251,437 @@ public class JavaFx extends Application {
 
 
 
-    private void openOutputPopup(java.util.List<String> names, javafx.stage.Window owner) {
-        if (names == null || names.isEmpty()) return;
+        private void openOutputPopupForBase(java.util.List<String> bases, javafx.stage.Window owner) {
+            if (bases == null || bases.isEmpty()) return;
 
-        javafx.stage.Stage popup = new javafx.stage.Stage();
-        popup.setTitle("Results (" + names.size() + ")");
-        if (owner != null) popup.initOwner(owner);
-        popup.initModality(javafx.stage.Modality.NONE);
-        popup.setAlwaysOnTop(true);
+            javafx.stage.Stage popup = new javafx.stage.Stage();
+            popup.setTitle("Results (" + bases.size() + " bases)");
+            if (owner != null) popup.initOwner(owner);
+            popup.initModality(javafx.stage.Modality.NONE);
+            popup.setAlwaysOnTop(true);
 
-        TabPane tp = new TabPane();
-        tp.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
+            TabPane tp = new TabPane();
+            tp.setTabClosingPolicy(TabPane.TabClosingPolicy.SELECTED_TAB);
 
-        // Für jedes Ergebnis einen Tab
-        for (String name : names) {
-            java.util.Map<String, Object> row = concOutputRowByName.get(name);
-            if (row == null) continue;
+            for (String base : bases) {
+                var data = listForBase(base);
+                if (data.isEmpty()) continue;
 
-            final String base = baseNameOf(name);
+                TableView<java.util.Map<String, Object>> table = new TableView<>(data);
+                table.setEditable(true);
+                table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
 
-            // --- Datenliste für die Tabelle ---
-            // WICHTIG: KEINE KOPIEN! -> echte Modellobjekte verwenden
-            javafx.collections.ObservableList<java.util.Map<String, Object>> data = FXCollections.observableArrayList();
+                java.util.function.BiConsumer<String, TableView<Map<String,Object>>> addCol =
+                        (colName, tv) -> {
+                            TableColumn<Map<String,Object>, String> c = new TableColumn<>(colName);
+                            c.setCellValueFactory(cd -> {
+                                Object v = cd.getValue().get(colName);
+                                String s;
+                                if (colName.matches("[A-Z][a-z]?") && v instanceof Number n) {
+                                    s = String.format(java.util.Locale.ROOT, "%.3f", n.doubleValue());
+                                } else if ("Geo".equals(colName) && v instanceof Number n) {
+                                    // deine bestehende Geo-Formatierung mit formatSci(...)
+                                    s = formatSci(n.doubleValue());
+                                } else {
+                                    s = (v == null) ? "" : String.valueOf(v);
+                                }
+                                return new SimpleStringProperty(s);
+                            });
+                            c.setCellFactory(TextFieldTableCell.forTableColumn());
+                            c.setOnEditCommit(ev -> {
+                                // Für Elemente zurück in Double parsen, sonst String lassen
+                                if (colName.matches("[A-Z][a-z]?")) {
+                                    String s = ev.getNewValue();
+                                    Double d = null;
+                                    try { if (s != null && !s.isBlank()) d = Double.parseDouble(s.trim().replace(',', '.')); } catch (Exception ignore) {}
+                                    ev.getRowValue().put(colName, d);
+                                } else {
+                                    ev.getRowValue().put(colName, ev.getNewValue());
+                                }
+                            });
+                            tv.getColumns().add(c);
+                        };
 
-            // 0) Hauptzeile (live) – echte Referenz
-            data.add(row);
 
-            // 1) Alle bisher gespeicherten Targets dieser Basis (echte Objekte)
-            for (var t : targetsOf(base)) {
-                data.add(t);
+                Runnable rebuildColumns = () -> {
+                    table.getColumns().clear();
+
+                    java.util.Map<String, Object> ref = data.get(0);
+
+                    // Name
+                    addCol.accept("Name", table);
+
+                    // Elemente nach Z sortiert
+                    java.util.List<String> elementCols = ref.keySet().stream()
+                            .filter(k -> k.matches("[A-Z][a-z]?") && isEnumElement(k))
+                            .sorted(java.util.Comparator.comparingInt(JavaFx::enumIndex))
+                            .toList();
+                    for (String k : elementCols) addCol.accept(k, table);
+
+                    // Z / Geo ans Ende (falls vorhanden)
+// Z ans Ende (optional weiterhin generisch)
+                    if (ref.containsKey("Z")) addCol.accept("Z", table);
+
+
+                    if (ref.containsKey("Geo")) {
+                        TableColumn<Map<String,Object>, String> cG = new TableColumn<>("Geo");
+                        cG.setCellValueFactory(cd -> {
+                            Object v = cd.getValue().get("Geo");
+                            if (v instanceof Number n) {
+                                return new SimpleStringProperty(formatSci(n.doubleValue())); // → "5 e-4"
+                            }
+                            return new SimpleStringProperty(v == null ? "" : String.valueOf(v));
+                        });
+
+
+                        cG.setCellFactory(TextFieldTableCell.forTableColumn());
+                        cG.setOnEditCommit(ev -> {
+                            String s = ev.getNewValue();
+                            Double d = null;
+                            try {
+                                if (s != null && !s.isBlank()) {
+                                    String t = s.trim()
+                                            .toLowerCase(java.util.Locale.ROOT)
+                                            .replace(" ", "")
+                                            .replace(',', '.');
+                                    d = Double.parseDouble(t);
+                                }
+                            } catch (Exception ignore) {}
+                            ev.getRowValue().put("Geo", d); // ungerundet speichern
+                        });
+                        table.getColumns().add(cG);
+                    }
+
+
+                };
+
+                // NEU: Rebuild-Callback für diese Basis merken
+                Runnable popupRebuild = () -> {
+                    rebuildColumns.run();
+                    table.refresh();
+                    reflowColumns(table);
+                };
+                concPopupRebuildByBase.put(base, popupRebuild);
+
+// NEU: Beim Schließen (Scene weg) wieder entfernen
+                table.sceneProperty().addListener((o, oldSc, newSc) -> {
+                    if (newSc == null) concPopupRebuildByBase.remove(base);
+                });
+
+
+                rebuildColumns.run();
+                reflowColumns(table);
+
+                // Controls
+                TextField tfNewElem = new TextField(); tfNewElem.setPromptText("Add element");
+                Button btnAddElem = new Button("Add");
+                btnAddElem.setOnAction(e -> {
+                    String k = tfNewElem.getText();
+                    if (k != null && k.matches("[A-Z][a-z]?") && isEnumElement(k)) {
+                        boolean first = true;
+                        for (var r : data) r.putIfAbsent(k, first ? 0.0 : "");
+                        rebuildColumns.run();
+                        table.refresh();
+                        reflowColumns(table);
+                    }
+                });
+                tfNewElem.setPrefColumnCount(6);
+
+                Button btnAddTarget = new Button("Add target row");
+                btnAddTarget.setOnAction(e -> {
+                    String unique = nextUniqueName(base);
+                    var target = new java.util.LinkedHashMap<String, Object>();
+                    target.put("Name", unique);
+                    // existierende Spalten wie in ref
+                    for (TableColumn<?, ?> tc : table.getColumns()) {
+                        String colName = tc.getText();
+                        if (!"Name".equals(colName)) {
+                            // für Elemente "" setzen, Z/Geo "" lassen
+                            target.put(colName, "");
+                        }
+                    }
+                    data.add(target);
+                    reflowColumns(table);
+                });
+
+                Button btnDelTarget = new Button("Remove selected");
+                btnDelTarget.setOnAction(e -> {
+                    var selected = new java.util.ArrayList<>(table.getSelectionModel().getSelectedItems());
+                    if (selected.isEmpty()) return;
+
+                    // Verwende vorhandene Liste aus dem Table (kein 'data' neu definieren!)
+                    var items = table.getItems();
+                    if (items == null || items.isEmpty()) return;
+
+                    // Basiszeile ist immer Index 0
+                    java.util.Map<String,Object> baseRow = items.get(0);
+
+                    // War die Basis mit ausgewählt?
+                    boolean baseSelected = selected.contains(baseRow);
+
+                    // Zuerst alle NICHT-Basis-Zeilen löschen
+                    selected.remove(baseRow);
+                    items.removeAll(selected);
+
+                    if (!baseSelected) {
+                        table.refresh();
+                        return; // Basis blieb unangetastet → fertig
+                    }
+
+                    // Basis war selektiert: Darf sie weg?
+                    // Nur wenn danach noch mind. 1 Zeile übrig ist
+                    if (items.size() <= 1) {
+                        // Dann gäbe es keine Werte mehr → Basis NICHT löschen
+                        table.refresh();
+                        return;
+                    }
+
+                    // Alte Basis entfernen …
+                    items.remove(0);
+
+                    // … und erste verbleibende Zeile zur neuen Basis machen
+                    java.util.Map<String,Object> newBase = items.get(0);
+                    newBase.put("Name", base); // 'base' ist der Basistitel aus dem äußeren Scope
+
+                    table.refresh();
+                });
+
+
+
+                Button btnCopyTsv = new Button("Copy TSV");
+                btnCopyTsv.setOnAction(e -> copyTableToClipboardAsSeparated(table, "\t"));
+                Tooltip ttbtnCopyTsv = new Tooltip("TSV = Tab-Separated-Value");
+                ttbtnCopyTsv.setShowDelay(javafx.util.Duration.millis(300));
+                ttbtnCopyTsv.setHideDelay(javafx.util.Duration.millis(100));
+                ttbtnCopyTsv.setShowDuration(javafx.util.Duration.seconds(10));
+
+                btnCopyTsv.setTooltip(ttbtnCopyTsv);
+
+                Button btnCopyLatex = new Button("Copy LaTeX");
+                btnCopyLatex.setOnAction(e -> copyTableToClipboardAsLaTeX(table, base));
+
+
+                // --- "Add known..." – neue Zeile aus eingegebener Verbindung/Mischung erzeugen ---
+                Button btnAddKnown = new Button("Add known");
+                Tooltip.install(btnAddKnown, new Tooltip(
+                        "Add known sample"
+                ));
+
+                btnAddKnown.setOnAction(e -> {
+                    // --- Dialog mit 2 Modi ---------------------------------------------------
+                    Dialog<ModeAndText> dlg = new Dialog<>();
+                    dlg.setTitle("Add known sample");
+                    dlg.setHeaderText("Choose input mode and enter composition");
+
+                    ButtonType okType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+                    dlg.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
+
+                    // Inhalt
+                    RadioButton rbFormula = new RadioButton("Formula (e.g., 1 Al2O3 + 2 Fe2O3)");
+                    RadioButton rbPercent = new RadioButton("Percentages (e.g., 35.73 O + 17.64 Al + 46.63 Fe)");
+                    ToggleGroup tg = new ToggleGroup();
+                    rbFormula.setToggleGroup(tg);
+                    rbPercent.setToggleGroup(tg);
+                    rbFormula.setSelected(true);
+
+                    TextField tfFormula = new TextField("1 Al2O3 + 2 Fe2O3");
+                    TextField tfPercent = new TextField("35.73 O + 17.64 Al + 46.63 Fe");
+                    tfPercent.setDisable(true);
+
+                    rbFormula.selectedProperty().addListener((o, ov, nv) -> {
+                        tfFormula.setDisable(!nv);
+                        tfPercent.setDisable(nv);
+                    });
+                    rbPercent.selectedProperty().addListener((o, ov, nv) -> {
+                        tfPercent.setDisable(!nv);
+                        tfFormula.setDisable(nv);
+                    });
+
+                    GridPane gp = new GridPane();
+                    gp.setHgap(10); gp.setVgap(10);
+                    gp.add(rbFormula, 0, 0, 2, 1);
+                    gp.add(new Label("Enter formula:"), 0, 1);
+                    gp.add(tfFormula, 1, 1);
+                    gp.add(rbPercent, 0, 2, 2, 1);
+                    gp.add(new Label("Enter percentages:"), 0, 3);
+                    gp.add(tfPercent, 1, 3);
+
+                    dlg.getDialogPane().setContent(gp);
+                    dlg.initOwner(table.getScene() != null ? table.getScene().getWindow() : null);
+
+                    dlg.setResultConverter(bt -> {
+                        if (bt == okType) {
+                            boolean useFormula = rbFormula.isSelected();
+                            String text = useFormula ? tfFormula.getText() : tfPercent.getText();
+                            return new ModeAndText(useFormula ? InputMode.FORMULA : InputMode.PERCENT, text == null ? "" : text.trim());
+                        }
+                        return null;
+                    });
+
+                    ModeAndText res = dlg.showAndWait().orElse(null);
+                    if (res == null || res.text().isBlank()) return;
+
+                    try {
+                        // --------- 1) Elemente + Anteile beschaffen (abhängig vom Modus) -----
+                        String[] syms;
+                        double[] fracs;   // Brüche 0..1 (nicht zwingend Summe 1)
+
+                        if (res.mode() == InputMode.FORMULA) {
+                            Funktionen fk = new FunktionenImpl();
+                            double Emin_ = (globalEmin <= 0 ? globalStep() : globalEmin);
+                            Verbindung vKnown = fk.parseVerbindung(res.text(), Emin_, globalEmax(), globalStep(), DATA_FILE);
+                            syms  = vKnown.getSymbole();
+                            fracs = vKnown.getKonzentrationen(); // angenommen als Bruchteile
+                            if (syms == null || fracs == null || syms.length == 0 || syms.length != fracs.length) {
+                                throw new IllegalArgumentException("No elements parsed from the formula.");
+                            }
+                        } else {
+                            // Prozente parsen → Map<Element, Prozent>
+                            java.util.Map<String, Double> pct = parsePercentSpec(res.text());
+                            if (pct.isEmpty())
+                                throw new IllegalArgumentException("Could not parse any 'number + element' pairs.");
+
+                            // in Arrays bringen; fracs = Prozent/100
+                            syms = pct.keySet().toArray(new String[0]);
+                            fracs = new double[syms.length];
+                            for (int i = 0; i < syms.length; i++) fracs[i] = pct.get(syms[i]) / 100.0;
+                        }
+
+                        // nur gültige Elementsymbole übernehmen
+                        java.util.LinkedHashSet<String> newElems = new java.util.LinkedHashSet<>();
+                        for (String s : syms) {
+                            if (s != null && s.matches("[A-Z][a-z]?") && isEnumElement(s)) newElems.add(s);
+                        }
+
+                        // --------- 2) Fehlende Spalten in ALLEN Zeilen der Basis ergänzen -----
+                        if (!newElems.isEmpty()) {
+                            boolean firstRow = true;
+                            for (var row : data) {
+                                for (String el : newElems) row.putIfAbsent(el, firstRow ? 0.0 : "");
+                                firstRow = false;
+                            }
+                            rebuildColumns.run();
+                            reflowColumns(table);
+                        }
+
+                        // --------- 3) Neue Zielzeile wie "Add target row" --------------------
+                        //String unique = nextUniqueName(base);
+                        String unique = nextUniqueName("Known");
+                        var target = new java.util.LinkedHashMap<String, Object>();
+                        target.put("Name", unique);
+
+                        // existierende Spalten leer initialisieren
+                        for (TableColumn<?, ?> tc : table.getColumns()) {
+                            String colName = tc.getText();
+                            if (!"Name".equals(colName)) target.put(colName, "");
+                        }
+
+                        // 4) Werte eintragen (in %) mit 2 Nachkommastellen
+                        for (int i = 0; i < syms.length; i++) {
+                            String el = syms[i];
+                            double pct = fracs[i] * 100.0;
+                            if (target.containsKey(el)) target.put(el, round2(pct));
+                            else                        target.put(el, round2(pct)); // defensiv
+                        }
+
+                        // 5) Z berechnen: Z̄ = Σ Z_i * Anteil_i (Anteil_i = fracs[i])
+                        double zSum = 0.0;
+                        for (int i = 0; i < syms.length; i++) {
+                            int Z = enumIndex(syms[i]) + 1; // dein Enum in Z-Reihenfolge
+                            zSum += Z * fracs[i];
+                        }
+                        target.put("Z", round2(zSum));
+
+                        // 6) Geo explizit leer lassen, falls vorhanden
+                        if (target.containsKey("Geo")) target.put("Geo", "");
+
+                        // 7) hinzufügen + Layout wie nach „neu öffnen“
+                        data.add(target);
+                        reflowColumns(table);
+                        table.refresh();
+
+                    } catch (Exception ex2) {
+                        new Alert(Alert.AlertType.ERROR,
+                                "Could not insert known composition:\n" + ex2.getMessage()
+                        ).showAndWait();
+                    }
+                });
+
+
+
+
+
+                HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget, btnDelTarget, new Separator(),btnCopyTsv, btnCopyLatex, new Separator(),btnAddKnown);
+                controls.setAlignment(Pos.CENTER_LEFT);
+
+                VBox content = new VBox(10, table, controls);
+                content.setPadding(new Insets(12));
+                VBox.setVgrow(table, Priority.ALWAYS);
+
+                tp.getTabs().add(new Tab(base, content));
             }
 
-            // Merker: falls später ein neuer Target reinkommt (registerTargetIfSuffix),
-            // können wir live auf diese 'data'-Liste pushen
-            concOpenOutputDataByName.put(base, data);
-
-            // --- TableView ---
-            TableView<java.util.Map<String, Object>> table = new TableView<>(data);
-            table.setEditable(true);
-            table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
-
-            // Helper: generische editierbare String-Spalte (versucht Double zu parsen)
-            java.util.function.BiConsumer<String, TableView<java.util.Map<String, Object>>> addCol =
-                    (colName, tv) -> {
-                        TableColumn<java.util.Map<String, Object>, String> c = new TableColumn<>(colName);
-
-                        c.setCellValueFactory(cd -> {
-                            Object v = cd.getValue().get(colName);
-                            String raw = (v == null) ? "" : String.valueOf(v);
-                            // Nur für "Name": Basis anzeigen, intern aber Rohwert behalten
-                            //String display = "Name".equals(colName) ? baseNameOf(raw) : raw;
-                            //return new javafx.beans.property.SimpleStringProperty(display);
-                            return new javafx.beans.property.SimpleStringProperty(raw);
-                        });
-
-                        // Wenn du "Name" editierbar lassen willst: Commit schreibt den Rohwert zurück.
-                        // (Anzeigen bleibt weiter Basis dank valueFactory)
-                        c.setCellFactory(TextFieldTableCell.forTableColumn());
-                        c.setOnEditCommit(ev -> {
-                            String newText = ev.getNewValue(); // was der User getippt hat (evtl. mit/ohne Suffix)
-                            // Im Modell bleibt der echte Text stehen:
-                            ev.getRowValue().put(colName, newText);
-                        });
-
-                        tv.getColumns().add(c);
-                    };
-
-
-            // Spalten-Rebuild in gewünschter Reihenfolge: Name | Elemente (nach Z) | Z | Geo
-            Runnable rebuildColumns = () -> {
-                table.getColumns().clear();
-
-                boolean hasZ   = row.containsKey("Z");
-                boolean hasGeo = row.containsKey("Geo");
-
-                // 1) Name
-                addCol.accept("Name", table);
-
-                // 2) Element-Spalten erkennen (echte Elementsymbole), nach Z sortieren
-                java.util.List<String> elementCols = new java.util.ArrayList<>();
-                for (String k : row.keySet()) {
-                    if (k == null) continue;
-                    if (k.equals("Name") || k.equals("Z") || k.equals("Geo")) continue;
-                    if (!k.matches("[A-Z][a-z]?")) continue;
-                    if (!isEnumElement(k)) continue; // nur echte Elemente zulassen
-                    elementCols.add(k);
-                }
-                elementCols.sort(java.util.Comparator.comparingInt(JavaFx::enumIndex));
-                for (String k : elementCols) addCol.accept(k, table);
-
-                // 3) Z, Geo
-                if (hasZ)   addCol.accept("Z", table);
-                if (hasGeo) addCol.accept("Geo", table);
-            };
-
-            rebuildColumns.run();
-
-            concPopupRebuildByBase.put(base, () -> { rebuildColumns.run(); table.refresh(); });
-
-
-
-            // --- Controls unter der Tabelle ---
-            TextField tfNewElem = new TextField();
-            tfNewElem.setPromptText("Add element column (e.g., Cu)");
-            Button btnAddElem = new Button("Add");
-            btnAddElem.setOnAction(e -> {
-                String k = tfNewElem.getText();
-                if (k == null) return;
-                k = k.trim();
-                if (!k.matches("[A-Z][a-z]?")) return;
-                if (!isEnumElement(k)) return;
-                if (!row.containsKey(k)) row.put(k, 0.0);      // im Hauptschema anlegen
-                rebuildColumns.run();
-                table.refresh();
-            });
-
-            Button btnAddTarget = new Button("Add target row");
-            btnAddTarget.setOnAction(e -> {
-                // Namen generieren nach deinem Schema: base, base (2), (3), ...
-                String targetName = nextUniqueName(base);
-
-                var target = new java.util.LinkedHashMap<String, Object>();
-                target.put("Name", targetName);
-
-                // Sichtbare Spalten vorbelegen (leer ist ok)
-                for (TableColumn<?, ?> tc : table.getColumns()) {
-                    String colName = tc.getText();
-                    if (!"Name".equals(colName)) target.putIfAbsent(colName, "");
-                }
-
-                // 1) Persistentes Model-Append
-                targetsOf(base).add(target);
-
-                // 2) Live in die Tabelle
-                table.getItems().add(target);
-            });
-
-            Button btnDelTarget = new Button("Remove selected");
-            btnDelTarget.setOnAction(e -> {
-                var sel = new java.util.ArrayList<>(table.getSelectionModel().getSelectedItems());
-                if (sel.isEmpty()) return;
-
-                // Hauptzeile (Index 0) nie löschen
-                sel.removeIf(rowMap -> rowMap == table.getItems().get(0));
-
-                // aus Tabelle & Modell entfernen
-                table.getItems().removeAll(sel);
-                var modelTargets = targetsOf(base);
-                modelTargets.removeAll(sel);
-            });
-
-            HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget, btnDelTarget);
-            controls.setAlignment(Pos.CENTER_LEFT);
-
-            VBox content = new VBox(10, table, controls);
-            content.setPadding(new Insets(12));
-            VBox.setVgrow(table, Priority.ALWAYS);
-
-            //Tab tab = new Tab(name, content);
-            Tab tab = new Tab(baseNameOf(name), content);
-
-
-            tab.setClosable(true);
-
-            // Beim Schließen: den Live-Merker (nur) für dieses base entfernen
-            //tab.setOnClosed(ev -> concOpenOutputDataByName.remove(base));
-
-            tab.setOnClosed(ev -> {
-                concOpenOutputDataByName.remove(base);
-                concPopupRebuildByBase.remove(base);
-            });
-
-            tp.getTabs().add(tab);
+            popup.setScene(new Scene(new BorderPane(tp), 900, 520));
+            popup.show();
         }
 
-        Scene sc = new Scene(new BorderPane(tp), 900, 520);
-        popup.setScene(sc);
-        popup.show();
+
+    private enum InputMode { FORMULA, PERCENT }
+    private record ModeAndText(InputMode mode, String text) {}
+
+    private static java.util.Map<String, Double> parsePercentSpec(String in) {
+        // akzeptiert: "20 Al + 10 Fe", Dezimaltrennzeichen ,/. und optional %
+        // Trenner: + oder ,
+        java.util.Map<String, Double> out = new java.util.LinkedHashMap<>();
+        if (in == null) return out;
+        String[] parts = in.split("\\s*(?:\\+|,)\\s*");
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "(?i)\\s*([0-9]+(?:[.,][0-9]+)?)\\s*%?\\s*([A-Z][a-z]?)\\s*"
+        );
+        for (String part : parts) {
+            var m = p.matcher(part);
+            if (m.matches()) {
+                String num = m.group(1).replace(',', '.');
+                String el  = m.group(2);
+                try {
+                    double val = Double.parseDouble(num);
+                    if (val >= 0.0) {
+                        out.merge(el, val, Double::sum); // falls Element doppelt vorkommt
+                    }
+                } catch (NumberFormatException ignore) {}
+            }
+        }
+        return out;
     }
+
+
+
+    private static void reflowColumns(TableView<?> table) {
+        // 1) kurz auf „unconstrained“, damit JavaFX alle Spalten neu denkt
+        table.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
+
+        // 2) alle PrefWidths auf „neu berechnen“
+        for (TableColumn<?, ?> c : table.getColumns()) {
+            c.setPrefWidth(Region.USE_COMPUTED_SIZE);
+        }
+
+        table.layout(); // sofortiges Layout
+
+        // 3) zurück auf constrained – wie nach frischem Öffnen
+        javafx.application.Platform.runLater(() -> {
+            table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+            table.layout();
+        });
+    }
+
+    private static String stripExt(String s) {
+        if (s == null) return null;
+        int i = s.lastIndexOf('.');
+        return (i > 0) ? s.substring(0, i) : s;
+    }
+
+
+
 
 
 
@@ -4290,25 +4690,234 @@ public class JavaFx extends Application {
     private TextField tfDarkBinderFrac;
 
 
-    private void registerTargetIfSuffix(String uniqueName, java.util.Map<String,Object> rowMap) {
-        if (!hasSuffix(uniqueName)) return;
-        String base = baseNameOf(uniqueName);
-        if (base == null) return;
+    private static String formatSci(double d) {
+        if (!Double.isFinite(d)) return "";
+        if (d == 0.0) return "0";
+        String s = String.format(java.util.Locale.ROOT, "%.4e", d); // z.B. "5.000000e-04"
+        int i = s.indexOf('e');
+        String mant = s.substring(0, i);
+        String exp  = s.substring(i + 1); // "-04" / "+06"
 
-        // Snapshot der erzeugten Zeile erstellen, aber mit "Name" = uniqueName
-        var targetRow = new java.util.LinkedHashMap<String,Object>(rowMap);
-        targetRow.put("Name", uniqueName);
-
-        // 1) persistente Liste je Basis erweitern
-        targetsOf(base).add(targetRow);
-
-        // 2) Falls Popup für 'base' offen → live anhängen (aber keine Duplikate)
-        var dataList = concOpenOutputDataByName.get(base);
-        if (dataList != null) {
-            boolean exists = dataList.stream().anyMatch(m -> uniqueName.equals(String.valueOf(m.get("Name"))));
-            if (!exists) dataList.add(targetRow);
+        // Mantisse: trailing zeros und evtl. Punkt weg
+        if (mant.contains(".")) {
+            mant = mant.replaceAll("0+$", "").replaceAll("\\.$", "");
         }
+        // Exponent: führendes + und führende 0 entfernen
+        exp = exp.replaceFirst("^\\+?", "").replaceFirst("^(-?)0+", "$1");
+        if (exp.isEmpty() || "-".equals(exp)) exp = "0";
+
+        return mant + "E" + exp; // -> "5E-4"
     }
+
+
+    private static String escapeForCsv(String s, String sep) {
+        if (s == null) return "";
+        // Nur bei CSV mit Komma brauchst du Quotes; für TSV meist unnötig.
+        if (",".equals(sep)) {
+            boolean needsQuote = s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r");
+            if (needsQuote) {
+                s = s.replace("\"", "\"\"");
+                return "\"" + s + "\"";
+            }
+        }
+        return s;
+    }
+
+    private void copyTableToClipboardAsSeparated(TableView<Map<String,Object>> table, String sep) {
+        if (table == null || table.getItems() == null || table.getItems().isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        var cols = new ArrayList<TableColumn<Map<String,Object>, ?>>(table.getColumns());
+
+        // Header
+        for (int c = 0; c < cols.size(); c++) {
+            String header = cols.get(c).getText();
+            sb.append(escapeForCsv(header, sep));
+            if (c < cols.size() - 1) sb.append(sep);
+        }
+        sb.append('\n');
+
+        // Rows (getCellData → nimmt die Anzeigeformatierung, z.B. Geo)
+        var items = table.getItems();
+        for (int r = 0; r < items.size(); r++) {
+            for (int c = 0; c < cols.size(); c++) {
+                var tc = cols.get(c);
+                Object cell = tc.getCellData(r);
+                sb.append(escapeForCsv(cell == null ? "" : String.valueOf(cell), sep));
+                if (c < cols.size() - 1) sb.append(sep);
+            }
+            sb.append('\n');
+        }
+
+        var content = new javafx.scene.input.ClipboardContent();
+        content.putString(sb.toString());
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+    }
+
+
+    private static void copyTableToClipboardAsLaTeX1(
+            TableView<Map<String, Object>> table, String baseName) {
+
+        // Spaltenüberschriften (sichtbare Reihenfolge)
+        List<TableColumn<Map<String, Object>, ?>> cols = new ArrayList<>(table.getColumns());
+        if (cols.isEmpty()) return;
+
+        // LaTeX: erste Spalte linksbündig, Rest rechtsbündig
+        StringBuilder sb = new StringBuilder();
+        String labelSafe = baseName.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase(Locale.ROOT);
+
+        sb.append("\\begin{table}[h]\n\\centering\n");
+
+
+        sb.append("\\begin{tabular}{");
+        for (int i = 0; i < cols.size(); i++) sb.append(i==0 ? 'l' : 'r');
+        sb.append("}\n\\toprule\n");
+
+        // Header
+        for (int i = 0; i < cols.size(); i++) {
+            String head = cols.get(i).getText();
+            sb.append(escapeLatex(head));
+            sb.append(i < cols.size()-1 ? " & " : " \\\\\n");
+        }
+        sb.append("\\midrule\n");
+
+        // Daten
+        for (Map<String, Object> row : table.getItems()) {
+            for (int i = 0; i < cols.size(); i++) {
+                String key = cols.get(i).getText();
+                Object v = row.get(key);
+                sb.append(formatLatexCell(v, key));
+                sb.append(i < cols.size()-1 ? " & " : " \\\\\n");
+            }
+        }
+        sb.append("\\bottomrule\n\\end{tabular}\n");
+        sb.append("\\caption{").append(escapeLatex(baseName)).append("}\n");
+        sb.append("\\label{tab:").append(labelSafe).append("}\n\\end{table}\n");
+
+        // -> Clipboard
+        ClipboardContent content = new ClipboardContent();
+        content.putString(sb.toString());
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    // Text sicher für LaTeX maskieren
+    private static String escapeLatex(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\textbackslash{}")
+                .replace("&", "\\&")
+                .replace("%", "\\%")
+                .replace("$", "\\$")
+                .replace("#", "\\#")
+                .replace("_", "\\_")
+                .replace("{", "\\{")
+                .replace("}", "\\}")
+                .replace("~", "\\textasciitilde{}")
+                .replace("^", "\\textasciicircum{}");
+    }
+
+    // Zahlen formatieren: Elemente & Z auf 2 Nachkommastellen; Geo als Mantisse × 10^{Exp}
+    private static String formatLatexCell(Object v, String key) {
+        if (v == null) return "";
+        if (v instanceof Number n) {
+            if ("Geo".equalsIgnoreCase(key)) {
+                double d = n.doubleValue();
+                if (!Double.isFinite(d) || d == 0.0) return "0";
+                String s = String.format(Locale.ROOT, "%.6e", d); // z.B. 2.734900e-07
+                int i = s.indexOf('e');
+                double mant = Double.parseDouble(s.substring(0, i));
+                int exp = Integer.parseInt(s.substring(i + 1));
+                // Mantisse schlank machen (ohne unnötige Nullen)
+                String mantStr = (Math.abs(mant) >= 1 ? String.format(Locale.ROOT, "%.4f", mant)
+                        : String.format(Locale.ROOT, "%.6f", mant))
+                        .replaceAll("0+$", "").replaceAll("\\.$", "");
+                return mantStr + " $\\times 10^{" + exp + "}$";
+            } else {
+                return String.format(Locale.ROOT, "%.3f", n.doubleValue());
+            }
+        }
+        return escapeLatex(String.valueOf(v));
+    }
+
+
+    private static void copyTableToClipboardAsLaTeX(
+            TableView<Map<String, Object>> table, String baseName) {
+
+        // Spaltenüberschriften (sichtbare Reihenfolge)
+        List<TableColumn<Map<String, Object>, ?>> cols = new ArrayList<>(table.getColumns());
+        if (cols.isEmpty()) return;
+
+        // --- Zeilenreihenfolge: zuerst ohne Geo, dann mit Geo ---
+        List<Map<String,Object>> allRows = new ArrayList<>(table.getItems());
+        List<Map<String,Object>> noGeo   = new ArrayList<>();
+        List<Map<String,Object>> withGeo = new ArrayList<>();
+        for (Map<String,Object> row : allRows) {
+            Object g = row.get("Geo");
+            if (!row.containsKey("Geo") || isEmptyCell(g)) noGeo.add(row);
+            else                                          withGeo.add(row);
+        }
+        List<Map<String,Object>> orderedRows = new ArrayList<>(noGeo);
+        orderedRows.addAll(withGeo);
+
+        // LaTeX: erste Spalte linksbündig, Rest rechtsbündig
+        StringBuilder sb = new StringBuilder();
+        String labelSafe = baseName.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase(Locale.ROOT);
+
+        sb.append("\\begin{table}[h]\n\\centering\n");
+
+        sb.append("\\begin{tabular}{");
+        for (int i = 0; i < cols.size(); i++) sb.append(i==0 ? 'l' : 'r');
+        sb.append("}\n\\toprule\n");
+
+        // Header
+        for (int i = 0; i < cols.size(); i++) {
+            String head = cols.get(i).getText();
+            if ("Z".equals(head))
+            {head = "";
+            sb.append("$\\overline{Z}$");}
+            sb.append(escapeLatex(head));
+            sb.append(i < cols.size()-1 ? " & " : " \\\\\n");
+        }
+        sb.append("\\midrule\n");
+
+        // Daten (mit '-' für leere Zellen)
+        for (Map<String, Object> row : orderedRows) {
+            for (int i = 0; i < cols.size(); i++) {
+                String key = cols.get(i).getText();
+                Object v = row.get(key);
+                sb.append(formatLatexCellOrDash(v, key)); // <- neu
+                sb.append(i < cols.size()-1 ? " & " : " \\\\\n");
+            }
+        }
+        sb.append("\\bottomrule\n\\end{tabular}\n");
+        sb.append("\\caption{").append(escapeLatex(baseName)).append("}\n");
+        sb.append("\\label{tab:").append(labelSafe).append("}\n\\end{table}\n");
+
+        // -> Clipboard
+        ClipboardContent content = new ClipboardContent();
+        content.putString(sb.toString());
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+// ===== Helper =====
+
+    // Leer, wenn null oder (String) leer/whitespace
+    private static boolean isEmptyCell(Object v) {
+        if (v == null) return true;
+        if (v instanceof String s) return s.trim().isEmpty();
+        return false;
+    }
+
+    // Nutzt bestehendes formatLatexCell(...), setzt aber '-' für leere Zellen
+    private static String formatLatexCellOrDash(Object v, String key) {
+        return isEmptyCell(v) ? "-" : formatLatexCell(v, key);
+    }
+
+
+
+
+
+
+
 
 
     private static java.util.List<String> verbindungSymbole(Verbindung v){
@@ -4320,63 +4929,48 @@ public class JavaFx extends Application {
     // Neu oben in der Klasse:
     private final java.util.Map<String, Runnable> concPopupRebuildByBase = new java.util.HashMap<>();
 
-    private void addMissingDarkColumns(
-            String base,
-            java.util.Map<String,Object> row,
-            java.util.Map<String,Double> darkWeights,
-            Verbindung binder
-    ){
-        // 1) Welche zusätzlichen Elemente brauchen wir?
-        java.util.LinkedHashSet<String> extra = new java.util.LinkedHashSet<>();
-        if (darkWeights != null) extra.addAll(darkWeights.keySet());
-        if (binder != null) extra.addAll(verbindungSymbole(binder));
-        if (extra.isEmpty()) return;
+        private void addMissingDarkColumnsForBase(
+                String base,
+                java.util.Map<String,Object> currentRow,
+                java.util.Map<String,Double> darkWeights,
+                Verbindung binder
+){
+            // Welche zusätzlichen Elemente?
+            java.util.LinkedHashSet<String> extra = new java.util.LinkedHashSet<>();
+            if (darkWeights != null) extra.addAll(darkWeights.keySet());
+            if (binder != null) extra.addAll(verbindungSymbole(binder));
+            if (extra.isEmpty()) return;
 
-        // 2a) In der aktuellen Ergebniszeile garantieren
-        for (String e : extra) {
-            if (e == null || !e.matches("[A-Z][a-z]?")) continue;
-            row.putIfAbsent(e, 0.0);
-        }
-
-        // 2b) **NEU**: In ALLEN bestehenden Ergebniszeilen mit demselben Basisnamen ergänzen
-        for (var entry : concOutputRowByName.entrySet()) {
-            String name = entry.getKey();
-            if (!base.equals(baseNameOf(name))) continue;
-            var r = entry.getValue();
+            // In der aktuellen Zeile sicherstellen
             for (String e : extra) {
-                if (e == null || !e.matches("[A-Z][a-z]?")) continue;
-                r.putIfAbsent(e, 0.0);
-            }
-        }
-
-        // 2c) **NEU**: In allen gespeicherten Target-Zeilen derselben Basis ergänzen
-        var targets = targetsOf(base);
-        if (targets != null) {
-            for (var t : targets) {
-                for (String e : extra) {
-                    if (e == null || !e.matches("[A-Z][a-z]?")) continue;
-                    t.putIfAbsent(e, "");
+                if (e != null && e.matches("[A-Z][a-z]?")) {
+                    currentRow.putIfAbsent(e, 0.0);
                 }
             }
-        }
 
-        // 3) Haupttabelle (falls vorhanden) – Spalten sicherstellen
-        ensureElementColumns(extra);
-
-        // 4) Falls ein Output-Popup für 'base' offen ist → alle Zeilen dort ergänzen
-        var dataList = concOpenOutputDataByName.get(base);
-        if (dataList != null) {
-            for (var r : dataList) {
-                for (String e : extra) {
-                    if (!r.containsKey(e)) r.put(e, "");
+            // In ALLEN Zeilen **dieser Basis** ergänzen
+            var list = resultsByBase.get(base);
+            if (list != null) {
+                boolean first = true;
+                for (var row : list) {
+                    for (String e : extra) {
+                        if (e == null || !e.matches("[A-Z][a-z]?")) continue;
+                        // erste Zeile (Basis) → 0.0 ; weitere Zeilen → ""
+                        row.putIfAbsent(e, first ? 0.0 : "");
+                    }
+                    first = false;
                 }
+            }
+
+            // Spalten im Haupt-Table absichern
+            ensureElementColumns(extra);
+
+            Runnable r = concPopupRebuildByBase.get(base);
+            if (r != null) {
+                javafx.application.Platform.runLater(r);
             }
         }
 
-        // 5) Spaltenlayout im Popup neu aufbauen (falls registriert)
-        var rebuild = concPopupRebuildByBase.get(base);
-        if (rebuild != null) rebuild.run();
-    }
 
 
 
@@ -4425,6 +5019,15 @@ public class JavaFx extends Application {
         Double v = safeDouble(s);
         return v == null ? 0.0 : v;
     }
+
+    private static Double round2(Double v) {
+        if (v == null) return null;
+        return Math.round(v * 1000.0) / 1000.0;
+    }
+    private static double round2(double v) {
+        return Math.round(v * 1000.0) / 1000.0;
+    }
+
 
 
 

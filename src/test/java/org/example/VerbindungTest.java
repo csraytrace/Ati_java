@@ -17,7 +17,7 @@ public class VerbindungTest {
         double step = 0.01;
         //String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
         String ver1 = "Fe2NiCrMoCuC";
-        String ver2 = "Al";
+        String ver2 = "1 Al2O3 + 2 Fe2O3";
 
         Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
         //System.out.println(v2.getWeight() / v1.getWeight() );

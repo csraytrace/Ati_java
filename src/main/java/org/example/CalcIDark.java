@@ -706,12 +706,12 @@ public class CalcIDark {
                 z_mittel_opt);
         System.out.println("Berechnete Intensitäten: " + java.util.Arrays.toString(berechneteIntensitaet1));
         System.out.printf(java.util.Locale.US, "Geometriefaktor: %.4e%n", geo);
-        for (int idx : order) {
-            double pct = gesamtKonz[idx] * 100.0;
-            System.out.printf(java.util.Locale.US, " %.4f%%%n &", pct);
-        }
-        System.out.printf(java.util.Locale.US, " %.4f%n //", z_mittel_opt);
-        System.out.printf(java.util.Locale.US, "Geometriefaktor: %.4e%n", geo);
+        //for (int idx : order) {
+        //    double pct = gesamtKonz[idx] * 100.0;
+        //    System.out.printf(java.util.Locale.US, " %.4f%%%n &", pct);
+       // }
+        //System.out.printf(java.util.Locale.US, " %.4f%n //", z_mittel_opt);
+        //System.out.printf(java.util.Locale.US, "Geometriefaktor: %.4e%n", geo);
         System.out.println("==================================");
     }
 

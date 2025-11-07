@@ -9,7 +9,6 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.chart.ScatterChart;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.CheckBoxTableCell;
 import javafx.scene.control.cell.ComboBoxTableCell;
@@ -19,7 +18,6 @@ import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
-import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 
@@ -4458,7 +4456,7 @@ public class JavaFx extends Application {
                 btnCopyTsv.setTooltip(ttbtnCopyTsv);
 
                 Button btnCopyLatex = new Button("Copy LaTeX");
-                btnCopyLatex.setOnAction(e -> copyTableToClipboardAsLaTeX(table, base));
+                btnCopyLatex.setOnAction(e -> copyTableToClipboardAsLaTeXTransposed(table, base));
 
 
                 // --- "Add known..." – neue Zeile aus eingegebener Verbindung/Mischung erzeugen ---
@@ -4815,28 +4813,29 @@ public class JavaFx extends Application {
                 .replace("^", "\\textasciicircum{}");
     }
 
-    // Zahlen formatieren: Elemente & Z auf 2 Nachkommastellen; Geo als Mantisse × 10^{Exp}
     private static String formatLatexCell(Object v, String key) {
         if (v == null) return "";
         if (v instanceof Number n) {
             if ("Geo".equalsIgnoreCase(key)) {
                 double d = n.doubleValue();
                 if (!Double.isFinite(d) || d == 0.0) return "0";
-                String s = String.format(Locale.ROOT, "%.6e", d); // z.B. 2.734900e-07
+                // 1 Dezimalstelle in wissenschaftlicher Notation
+                String s = String.format(java.util.Locale.ROOT, "%.1e", d); // z.B. "7.1e-07"
                 int i = s.indexOf('e');
-                double mant = Double.parseDouble(s.substring(0, i));
-                int exp = Integer.parseInt(s.substring(i + 1));
-                // Mantisse schlank machen (ohne unnötige Nullen)
-                String mantStr = (Math.abs(mant) >= 1 ? String.format(Locale.ROOT, "%.4f", mant)
-                        : String.format(Locale.ROOT, "%.6f", mant))
-                        .replaceAll("0+$", "").replaceAll("\\.$", "");
-                return mantStr + " $\\times 10^{" + exp + "}$";
+                String mant = s.substring(0, i);
+                String exp  = s.substring(i + 1); // "+06", "-07", "0"
+                // Exponent: führendes '+' weg, führende 0en weg, "-" behalten
+                exp = exp.replaceFirst("^\\+?", "").replaceFirst("^(-?)0+", "$1");
+                if (exp.isEmpty() || "-".equals(exp)) exp = "0";
+                return mant + "e" + exp; // -> "7.1e-7"
             } else {
-                return String.format(Locale.ROOT, "%.3f", n.doubleValue());
+                // Elemente (und Z, falls numerisch) mit 3 Nachkommastellen
+                return String.format(java.util.Locale.ROOT, "%.3f", n.doubleValue());
             }
         }
         return escapeLatex(String.valueOf(v));
     }
+
 
 
     private static void copyTableToClipboardAsLaTeX(
@@ -4897,6 +4896,97 @@ public class JavaFx extends Application {
         content.putString(sb.toString());
         Clipboard.getSystemClipboard().setContent(content);
     }
+
+
+    private static void copyTableToClipboardAsLaTeXTransposed(
+            TableView<Map<String, Object>> table, String baseName) {
+
+        List<TableColumn<Map<String,Object>, ?>> cols = new ArrayList<>(table.getColumns());
+        if (cols.isEmpty()) return;
+
+        // 1) "Normale" Matrix vorbereiten
+        List<List<String>> normal = new ArrayList<>();
+
+        // Header (mit Z -> \overline{Z})
+        List<String> header = new ArrayList<>();
+        for (TableColumn<Map<String,Object>, ?> c : cols) {
+            String head = c.getText();
+            if ("Z".equals(head)) {
+                header.add("$\\overline{Z}$");   // nicht escapen
+            } else {
+                header.add(escapeLatex(head));
+            }
+        }
+        normal.add(header);
+
+        // *** NEU: Zeilenreihenfolge wie vorher: erst ohne Geo, dann mit Geo ***
+        List<Map<String,Object>> allRows = new ArrayList<>(table.getItems());
+        List<Map<String,Object>> noGeo   = new ArrayList<>();
+        List<Map<String,Object>> withGeo = new ArrayList<>();
+        for (Map<String,Object> row : allRows) {
+            Object g = row.get("Geo");
+            if (!row.containsKey("Geo") || isEmptyCell(g)) noGeo.add(row);
+            else                                          withGeo.add(row);
+        }
+        List<Map<String,Object>> orderedRows = new ArrayList<>(noGeo);
+        orderedRows.addAll(withGeo);
+
+        // Daten-Zeilen in gewünschter Reihenfolge
+        for (Map<String,Object> row : orderedRows) {
+            List<String> line = new ArrayList<>();
+            for (TableColumn<Map<String,Object>, ?> c : cols) {
+                String key = c.getText();
+                Object v = row.get(key);
+                line.add(formatLatexCellOrDash(v, key));   // inkl. Geo=7.1e-7, 3 Nachkommastellen
+            }
+            normal.add(line);
+        }
+
+        // 2) Transponieren
+        int R = normal.size();
+        int C = normal.get(0).size();
+        List<List<String>> transposed = new ArrayList<>(C);
+        for (int c = 0; c < C; c++) {
+            List<String> newRow = new ArrayList<>(R);
+            for (int r = 0; r < R; r++) newRow.add(normal.get(r).get(c));
+            transposed.add(newRow);
+        }
+
+        // 3) LaTeX ausgeben
+        String labelSafe = baseName.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+        sb.append("\\begin{table}[h]\n\\centering\n");
+
+        sb.append("\\begin{tabular}{");
+        for (int i = 0; i < transposed.get(0).size(); i++) sb.append(i==0 ? 'l' : 'r');
+        sb.append("}\n\\toprule\n");
+
+        // Kopf (transponiert)
+        for (int i = 0; i < transposed.get(0).size(); i++) {
+            sb.append(transposed.get(0).get(i));
+            sb.append(i < transposed.get(0).size()-1 ? " & " : " \\\\\n");
+        }
+        sb.append("\\midrule\n");
+
+        // Daten
+        for (int r = 1; r < transposed.size(); r++) {
+            List<String> row = transposed.get(r);
+            for (int i = 0; i < row.size(); i++) {
+                sb.append(row.get(i));
+                sb.append(i < row.size()-1 ? " & " : " \\\\\n");
+            }
+        }
+
+        sb.append("\\bottomrule\n\\end{tabular}\n");
+        sb.append("\\caption{").append(escapeLatex(baseName)).append("}\n");
+        sb.append("\\label{tab:").append(labelSafe).append("-t}\n\\end{table}\n");
+
+        ClipboardContent content = new ClipboardContent();
+        content.putString(sb.toString());
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+
 
 // ===== Helper =====
 
@@ -5027,11 +5117,6 @@ public class JavaFx extends Application {
     private static double round2(double v) {
         return Math.round(v * 1000.0) / 1000.0;
     }
-
-
-
-
-
 
 
 

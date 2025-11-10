@@ -42,6 +42,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import javafx.util.StringConverter;
 
 // Preferences
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.prefs.Preferences;
 
@@ -115,6 +116,10 @@ public class JavaFx extends Application {
     // UI-Bausteine für die Ergebnisliste
     private ListView<String> concResultsListView;   // Liste der Ergebniseinträge
     private VBox concResultsBox;                    // Container (Label + ListView)
+
+
+
+    private LayerType currentLayerType = LayerType.DICKSCHICHT; // Default
 
 
 
@@ -237,8 +242,12 @@ public class JavaFx extends Application {
 
         darkModeToggle.selectedProperty().addListener((obs, o, on) -> {
             scene.getStylesheets().clear();
-            if (on) scene.getStylesheets().add("data:text/css," + darkCss.replace("\n", "%0A").replace(" ", "%20"));
+            if (on) {
+                String cssB64 = Base64.getEncoder().encodeToString(darkCss.getBytes(StandardCharsets.UTF_8));
+                scene.getStylesheets().add("data:text/css;base64," + cssB64);
+            }
         });
+
 
         Runnable updateSigmaPrompt = () -> {
             boolean loveScott = "Love & Scott".equals(tubeModel.getValue());
@@ -368,9 +377,16 @@ public class JavaFx extends Application {
 // --- Bild rechts neben dem Grid ---
         previewImage = new ImageView();
 // lokale Datei:
-        previewImage.setImage(new Image(new java.io.File(
-                "C:\\Users\\julia\\OneDrive\\Dokumente\\A_Christian\\Masterarbeit\\Präsentation\\czuc0.8.png"
-        ).toURI().toString()));
+        //previewImage.setImage(new Image(new java.io.File(
+         //       "C:\\Users\\julia\\OneDrive\\Dokumente\\A_Christian\\Masterarbeit\\Bilder Gui\\Röhre.png"
+        //).toURI().toString()));
+
+        var imgUrl = java.util.Objects.requireNonNull(
+                getClass().getResource("/roehre.png"),
+                "Bild nicht gefunden!"
+        );
+        previewImage.setImage(new Image(imgUrl.toExternalForm()));
+
 // ODER aus Ressourcen:
 // var url = getClass().getResource("/img/czuc0.8.png");
 // if (url != null) previewImage.setImage(new Image(url.toExternalForm()));
@@ -820,14 +836,26 @@ public class JavaFx extends Application {
 
         // --- Image on the right of the form ---
         ImageView previewImage2 = new ImageView();
-        try {
-            previewImage2.setImage(new Image(new java.io.File(
-                    "C:\\\\Users\\\\julia\\\\OneDrive\\\\Dokumente\\\\A_Christian\\\\Masterarbeit\\\\Masterarbeit\\\\Massenstreukoeffizienten.png"
-            ).toURI().toString()));
-        } catch (Exception ignore) {}
+        //try {
+        //    previewImage2.setImage(new Image(new java.io.File(
+         //           "C:\\\\Users\\\\julia\\\\OneDrive\\\\Dokumente\\\\A_Christian\\\\Masterarbeit\\\\Masterarbeit\\\\Massenstreukoeffizienten.png"
+         //   ).toURI().toString()));
+        //} catch (Exception ignore) {}
+
+
+        var imgUrl = java.util.Objects.requireNonNull(
+                getClass().getResource("/Detektor.png"),
+                "Bild nicht gefunden!"
+        );
+        previewImage2.setImage(new Image(imgUrl.toExternalForm()));
+
+
+
         previewImage2.setPreserveRatio(true);
-        previewImage2.setFitWidth(600);
-        previewImage2.setFitHeight(400);
+        //previewImage2.setFitWidth(600);
+        //previewImage2.setFitHeight(400);
+        previewImage2.setFitWidth(800);
+        previewImage2.setFitHeight(500);
 
         Region spacer2 = new Region();
         HBox.setHgrow(spacer2, Priority.ALWAYS);
@@ -1243,6 +1271,8 @@ public class JavaFx extends Application {
 
     private final java.util.Map<Verbindung, Boolean> tubeFilterUse = new java.util.IdentityHashMap<>();
     private final java.util.Map<Verbindung, Boolean> detFilterUse  = new java.util.IdentityHashMap<>();
+
+    private static record InternalStdSpec(String elem, String pct) {}
 
 
 
@@ -3346,9 +3376,20 @@ public class JavaFx extends Application {
         // --- Berechnen ---
         Button btnCalc = new Button("Berechnen");
         btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
-        btnCalc.setOnAction(e -> runConcCalculation());
+        btnCalc.setOnAction(e -> {
+            currentLayerType = LayerType.DICKSCHICHT;
+            runConcCalculation();
+        });
 
-        HBox rowActions = new HBox(10, btnCalc);
+        Button btnCalcThin = new Button("Berechnen (Dünnschicht)");
+        btnCalcThin.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
+        btnCalcThin.setOnAction(e -> {
+            currentLayerType = LayerType.DUENNSCHICHT;
+            runConcCalculationThin();
+        });
+
+
+        HBox rowActions = new HBox(10, btnCalc,btnCalcThin);
         rowActions.setAlignment(Pos.CENTER_LEFT);
 
         // --- Block unterhalb der Datei-Liste ---
@@ -3385,7 +3426,12 @@ public class JavaFx extends Application {
                 String base = concResultsListView.getSelectionModel().getSelectedItem();
                 if (base != null) {
                     javafx.stage.Window w = concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null;
-                    openOutputPopupForBase(java.util.List.of(base), w);
+                    if (currentLayerType == LayerType.DUENNSCHICHT) {
+                        openOutputPopupForBaseDuennschicht(java.util.List.of(base), w);
+                    } else {
+                        openOutputPopupForBaseDickschicht(java.util.List.of(base), w);
+                    }
+
                 }
             }
         });
@@ -3570,6 +3616,10 @@ public class JavaFx extends Application {
     private javafx.collections.ObservableList<ConcRow> buildRowsForSingleFile(java.nio.file.Path file) {
         return buildRowsForFiles(java.util.List.of(file), tubeMaterial == null ? null : tubeMaterial.getText());
     }
+
+
+
+
 
 
 
@@ -4084,6 +4134,345 @@ public class JavaFx extends Application {
     } // <<< ENDE der Methode runConcCalculation()
 
 
+    private Map<String,Object> computeThinConcentrationsAsRow(
+            TableView<Map<String,Object>> table, String baseLabel
+    ) throws Exception {
+
+        // --- Datei & editierten Zeilen wie in runConcCalculationThin() holen ---
+        var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+        if (file == null) throw new IllegalStateException("Keine Datei ausgewählt.");
+
+        var rows = getOrBuildRowsForFile(file);
+        if (rows == null || rows.isEmpty()) throw new IllegalStateException("Keine Datenzeilen vorhanden.");
+
+        // beste Zeile pro Element (nur enabled & intensity > 0; K vor L)
+        Map<String, ConcRow> bestByElement = new LinkedHashMap<>();
+        for (ConcRow r : rows) {
+            if (r == null || !r.enabled.get()) continue;
+            String ele = r.element.get();
+            if (ele == null || ele.isBlank()) continue;
+            String tr = (r.transition.get() == null ? "" : r.transition.get().trim().toUpperCase(Locale.ROOT));
+            double inten = r.intensity.get();
+            if (!(inten > 0.0)) continue;
+
+            ConcRow old = bestByElement.get(ele);
+            if (old == null) bestByElement.put(ele, r);
+            else {
+                boolean newIsK = "K".equals(tr);
+                boolean oldIsK = "K".equals(old.transition.get());
+                if (newIsK && !oldIsK) bestByElement.put(ele, r);
+            }
+        }
+        if (bestByElement.isEmpty()) throw new IllegalStateException("Keine gültigen Intensitäten > 0.");
+
+        List<String> elementSymbole = new ArrayList<>(bestByElement.keySet());
+        List<Integer> elementInt    = new ArrayList<>();
+        List<String>  whichLine     = new ArrayList<>();
+        for (String ele : elementSymbole) {
+            ConcRow r = bestByElement.get(ele);
+            whichLine.add(r.transition.get());
+            elementInt.add((int)Math.round(r.intensity.get()));
+        }
+
+        // --- UI/Parameter wie in runConcCalculationThin() ---
+        double Emin = 0.0;
+        double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+        double step = parseOrDefault(energieStep, 0.01);
+        String dateiPfad = DATA_FILE;
+
+        String roehreTyp = switch (tubeModel.getValue()) {
+            case "Love & Scott" -> "lovescott";
+            default             -> "widerschwinger";
+        };
+        String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+        double alpha      = parseOrDefault(electronIncidentAngle, 20);
+        double beta       = parseOrDefault(electronTakeoffAngle, 70);
+        double fensterW   = 0.0;
+
+        double sigma      = parseOrDefault(sigmaConst, 1.0314);
+        double c2cL       = parseOrDefault(charZuContL, 1.0);
+        String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+        double raumwinkel = 1.0;
+        double I_A        = parseOrDefault(tubeCurrent, 1.0);
+        double messzeit   = parseOrDefault(measurementTime, 30);
+        double c2c        = parseOrDefault(charZuCont, 1.0);
+
+        // Detektor
+        String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+        double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+        double phiDet     = 0.0;
+        String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+        double bedeck     = 1.0;
+        double palpha     = 45, pbeta = 45;
+        String detMat     = parseOrDefault(detectorMaterial, "Si");
+        double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+        double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+        // Material-/Funktionsfilter wie gehabt
+        List<Verbindung> activeTubeFilters = new ArrayList<>();
+        for (Verbindung v : tubeFilterVerbindungen)
+            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+        boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+        if (activeTubeFilters.isEmpty() && haveFuncTube) activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+        if (haveFuncTube) applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+
+        List<Verbindung> activeDetFilters = new ArrayList<>();
+        for (Verbindung v : detFilterVerbindungen)
+            if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+        boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+        if (activeDetFilters.isEmpty() && haveFuncDet) activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+        if (haveFuncDet) applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+
+        // Probe + Übergänge
+        Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
+        for (int i = 0; i < elementSymbole.size(); i++) {
+            if ("K".equalsIgnoreCase(whichLine.get(i))) probe.setzeUebergangAktivFuerElementKAlpha(i);
+            else                                        probe.setzeUebergangAktivFuerElementLAlpha(i);
+        }
+
+        // Rechenobjekt & Dünnschicht-Resultat
+        CalcI calc = new CalcI(
+                dateiPfad, probe, roehreTyp, roehrenMat,
+                alpha, beta, fensterW,
+                sigma, c2cL,
+                rFenstMat, rFenstD_um, raumwinkel, I_A,
+                Emin, Emax, step, messzeit, c2c,
+                dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                detMat, tots_um, act_mm,
+                activeTubeFilters, activeDetFilters
+        );
+        PreparedValues pv = calc.werteVorbereitenAlle();
+        double[] relKonz = calc.berechneRelKonzentrationenDünnschicht(calc, pv, 10000); // [%]
+
+        // Elemente nach Z sortieren
+        List<Integer> zNumsList = probe.getElementZNumbers();
+        int[] zNums = zNumsList.stream().mapToInt(Integer::intValue).toArray();
+        List<String> elemsByZ = new ArrayList<>(elementSymbole);
+        elemsByZ.sort(Comparator.comparingInt(sym -> zNums[elementSymbole.indexOf(sym)]));
+
+        // Ergebniszeile: Name + Elemente (kein Geo; Z optional)
+        Map<String,Object> row = new LinkedHashMap<>();
+        row.put("Name", nextUniqueName(baseLabel));
+        for (String sym : elemsByZ) {
+            int idx = elementSymbole.indexOf(sym);
+            if (idx >= 0 && idx < relKonz.length) row.put(sym, round2(relKonz[idx]));
+        }
+
+        // Optional: Z für spätere Dialoge hilfreich
+        double zSum = 0.0;
+        for (int i = 0; i < elemsByZ.size(); i++) {
+            String sym = elemsByZ.get(i);
+            int idx = elementSymbole.indexOf(sym);
+            double frac = (idx >= 0 && idx < relKonz.length) ? relKonz[idx] / 100.0 : 0.0;
+            int Zi = enumIndex(sym) + 1;
+            zSum += Zi * frac;
+        }
+        row.put("Z", round2(zSum));
+
+        return row;
+    }
+
+
+
+
+
+    private void runConcCalculationThin() {
+        try {
+            // 0) Datei
+            var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+            if (file == null) {
+                new Alert(Alert.AlertType.INFORMATION, "Please select a file in the dropdown.").showAndWait();
+                return;
+            }
+
+            // 1) aktuelle (ggf. editierte) Zeilen
+            var rows = getOrBuildRowsForFile(file);
+            if (rows == null || rows.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION, "No data rows available.").showAndWait();
+                return;
+            }
+
+            // 2) beste Zeile pro Element (wie in runConcCalculation())
+            java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
+            for (ConcRow r : rows) {
+                if (r == null || !r.enabled.get()) continue;
+                String ele = r.element.get();
+                if (ele == null || ele.isBlank()) continue;
+                String tr = (r.transition.get() == null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+                double inten = r.intensity.get();
+                if (!(inten > 0.0)) continue;
+
+                ConcRow old = bestByElement.get(ele);
+                if (old == null) bestByElement.put(ele, r);
+                else {
+                    boolean newIsK = "K".equals(tr);
+                    boolean oldIsK = "K".equals(old.transition.get());
+                    if (newIsK && !oldIsK) bestByElement.put(ele, r);
+                }
+            }
+            if (bestByElement.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION, "No valid enabled intensities > 0 found.").showAndWait();
+                return;
+            }
+
+            java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
+            java.util.List<Integer> elementInt    = new java.util.ArrayList<>();
+            java.util.List<String>  whichLine     = new java.util.ArrayList<>();
+            for (String ele : elementSymbole) {
+                ConcRow r = bestByElement.get(ele);
+                whichLine.add(r.transition.get());
+                elementInt.add((int)Math.round(r.intensity.get()));
+            }
+
+            // 3) UI-Parameter (wie gehabt)
+            double Emin = 0.0;
+            double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+            double step = parseOrDefault(energieStep, 0.01);
+            String dateiPfad = DATA_FILE;
+
+            String roehreTyp = switch (tubeModel.getValue()) {
+                case "Love & Scott" -> "lovescott";
+                default             -> "widerschwinger";
+            };
+            String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+            double alpha      = parseOrDefault(electronIncidentAngle, 20);
+            double beta       = parseOrDefault(electronTakeoffAngle, 70);
+            double fensterW   = 0.0;
+
+            double sigma      = parseOrDefault(sigmaConst, 1.0314);
+            double c2cL       = parseOrDefault(charZuContL, 1.0);
+            String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+            double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+            double raumwinkel = 1.0;
+            double I_A        = parseOrDefault(tubeCurrent, 1.0);
+            double messzeit   = parseOrDefault(measurementTime, 30);
+            double c2c        = parseOrDefault(charZuCont, 1.0);
+
+            // Detektor
+            String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+            double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+            double phiDet     = 0.0;
+            String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+            double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+            double bedeck     = 1.0;
+            double palpha     = 45, pbeta = 45;
+            String detMat     = parseOrDefault(detectorMaterial, "Si");
+            double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+            double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+            // Material-/Funktionsfilter (wie in runConcCalculation())
+            java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
+            for (Verbindung v : tubeFilterVerbindungen)
+                if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+
+            boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+            boolean haveMatTube  = !activeTubeFilters.isEmpty();
+            if (!haveMatTube && haveFuncTube) {
+                activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+            }
+            if (haveFuncTube) {
+                applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+            }
+
+            java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+            for (Verbindung v : detFilterVerbindungen)
+                if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+
+            boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+            boolean haveMatDet  = !activeDetFilters.isEmpty();
+            if (!haveMatDet && haveFuncDet) {
+                activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+            }
+            if (haveFuncDet) {
+                applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+            }
+
+            // 4) Probe + Übergänge
+            Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
+            for (int i = 0; i < elementSymbole.size(); i++) {
+                if ("K".equalsIgnoreCase(whichLine.get(i))) probe.setzeUebergangAktivFuerElementKAlpha(i);
+                else                                        probe.setzeUebergangAktivFuerElementLAlpha(i);
+            }
+
+            // 5) Rechenobjekt
+            CalcI calc = new CalcI(
+                    dateiPfad, probe, roehreTyp, roehrenMat,
+                    alpha, beta, fensterW,
+                    sigma, c2cL,
+                    rFenstMat, rFenstD_um, raumwinkel, I_A,
+                    Emin, Emax, step, messzeit, c2c,
+                    dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                    detMat, tots_um, act_mm,
+                    activeTubeFilters, activeDetFilters
+            );
+
+            // === Dünnschicht-Pfad ===
+            PreparedValues pv = calc.werteVorbereitenAlle();
+            double[] relKonz = calc.berechneRelKonzentrationenDünnschicht(calc, pv, 10000); // [%]
+
+            // Optional intern: Summenintensität (NICHT anzeigen)
+            double[] berechInt = calc.berechneSummenintensitaetMitKonz(relKonz);
+            // double[] geoArr = calc.geometriefaktor(...); // wenn du es intern brauchst
+
+            // 6) Ergebnis-Basisname -> eigenes „Dünn“-Set
+            String baseOrig = stripExt(file.getFileName().toString());
+            String base = baseOrig + " Dünn";                 // <<<< eigenes Set
+            String uniqueName = nextUniqueName(base);
+
+            // Elemente nach Z sortieren (wie normaler Pfad — aber ohne Z-/Geo-Ausgabe)
+            java.util.List<Integer> zNumsList = probe.getElementZNumbers();
+            int[] zNums = zNumsList.stream().mapToInt(Integer::intValue).toArray();
+            java.util.List<String> elemsByZ = new java.util.ArrayList<>(elementSymbole);
+            elemsByZ.sort(java.util.Comparator.comparingInt(sym ->
+                    zNums[elementSymbole.indexOf(sym)]
+            ));
+
+            // 7) Zeile bauen: NUR Name + Elemente
+            java.util.Map<String,Object> rowOut = new java.util.LinkedHashMap<>();
+            rowOut.put("Name", uniqueName);
+            for (String sym : elemsByZ) {
+                int idx = elementSymbole.indexOf(sym);
+                if (idx >= 0 && idx < relKonz.length) rowOut.put(sym, round2(relKonz[idx]));
+            }
+            // !!! kein Z, kein Geo !!!
+
+            // Spalten absichern (nur Elemente)
+            ensureElementColumns(rowOut.keySet().stream()
+                    .filter(k -> k.matches("[A-Z][a-z]?"))
+                    .toList());
+
+            // 8) In eigenes Basis-Set schreiben
+            var list = listForBase(base);
+            if (list.isEmpty()) {
+                rowOut.put("Name", base); // erste Zeile = Basis (ohne Suffix)
+                list.add(rowOut);
+            } else {
+                var target = new java.util.LinkedHashMap<String,Object>(rowOut);
+                target.put("Name", nextUniqueName(base));
+                list.add(target);
+            }
+
+            if (!concBaseNames.contains(base)) concBaseNames.add(base);
+
+            // UI refresh
+            if (concResultsListView != null) {
+                concResultsListView.refresh();
+                concResultsListView.getSelectionModel().select(base);
+                concResultsListView.scrollTo(base);
+            }
+
+        } catch (Throwable ex) {
+            ex.printStackTrace();
+            new Alert(Alert.AlertType.ERROR,
+                    "Unexpected error in runConcCalculationThin():\n" + ex.getClass().getSimpleName() + ": " + ex.getMessage()
+            ).showAndWait();
+        }
+    }
+
+
+
 
     private String nextUniqueName(String base) {
         var list = listForBase(base);
@@ -4247,14 +4636,24 @@ public class JavaFx extends Application {
         for (String e : elements) ensureElementColumn(e);
     }
 
+    enum LayerType { DUENNSCHICHT, DICKSCHICHT }
+
+    private void openOutputPopupForBaseDuennschicht(List<String> bases, Window owner) {
+        openOutputPopupForBase(bases, owner, LayerType.DUENNSCHICHT);
+    }
+    private void openOutputPopupForBaseDickschicht(List<String> bases, Window owner) {
+        openOutputPopupForBase(bases, owner, LayerType.DICKSCHICHT);
+    }
 
 
-        private void openOutputPopupForBase(java.util.List<String> bases, javafx.stage.Window owner) {
+
+    private void openOutputPopupForBase(java.util.List<String> bases, javafx.stage.Window owner,
+                                            LayerType layerType) {
             if (bases == null || bases.isEmpty()) return;
 
             javafx.stage.Stage popup = new javafx.stage.Stage();
-            popup.setTitle("Results (" + bases.size() + " bases)");
-            if (owner != null) popup.initOwner(owner);
+        popup.setTitle("Results  [" + layerType + "]");
+        if (owner != null) popup.initOwner(owner);
             popup.initModality(javafx.stage.Modality.NONE);
             popup.setAlwaysOnTop(true);
 
@@ -4608,8 +5007,162 @@ public class JavaFx extends Application {
 
 
 
+                // --- Internal Standard (nur Dünnschicht) ---
+                Button btnInternalStd = new Button("Internal Std");
+                Tooltip.install(btnInternalStd, new Tooltip(
+                        "Calculate with internal standard"
+                ));
+                btnInternalStd.setOnAction(e -> {
+                    try {
+                        var items = table.getItems();
+                        if (items == null) return;
+
+                        // 1) Dünnschicht-Ergebniszeile wie beim Button berechnen (als Map, noch NICHT einfügen)
+                        Map<String,Object> thinRow = computeThinConcentrationsAsRow(table, base);
+                        if (thinRow == null || thinRow.isEmpty()) {
+                            System.err.println("[ThinDebug] items=" + (table.getItems()==null ? "null" : table.getItems().size()));
+                            System.err.println("[ThinDebug] base=" + base);
+                            // Beispielhaft ein paar erwartete Keys prüfen:
+                            var first = (table.getItems()!=null && !table.getItems().isEmpty()) ? table.getItems().get(0) : null;
+                            System.err.println("[ThinDebug] firstRowKeys=" + (first==null ? "null" : first.keySet()));
+                            // Wenn eure Funktion einen Grund mitschicken kann:
+                            Object reason = (thinRow==null ? null : thinRow.get("__reason"));
+                            System.err.println("[ThinDebug] reason=" + reason);
+                        }
+
+
+                        // 2) Elementliste aus *dieser* Dünnschicht-Zeile holen (nur echte Elementsymbole)
+                        java.util.List<String> elemCols = thinRow.keySet().stream()
+                                .filter(k -> k.matches("[A-Z][a-z]?") && isEnumElement(k))
+                                .sorted(java.util.Comparator.comparingInt(JavaFx::enumIndex))
+                                .toList();
+                        if (elemCols.isEmpty()) {
+                            new Alert(Alert.AlertType.INFORMATION, "Keine Elementspalten im Ergebnis.").showAndWait();
+                            return;
+                        }
+
+                        // 3) Dialog mit ComboBox (Element) + Ziel-% (TextField)
+                        Dialog<InternalStdSpec> dlg = new Dialog<>();
+                        dlg.setTitle("Internal Standard (Dünnschicht)");
+                        dlg.setHeaderText("Wähle Element und Ziel-Konzentration in %");
+
+                        ButtonType okType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
+                        dlg.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
+
+                        ComboBox<String> cbElem = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(elemCols));
+                        cbElem.getSelectionModel().selectFirst();
+
+                        TextField tfPct = new TextField();
+                        tfPct.setPromptText("z.B. 25");
+
+                        GridPane gp = new GridPane(); gp.setHgap(10); gp.setVgap(10);
+                        gp.add(new Label("Element:"), 0, 0); gp.add(cbElem, 1, 0);
+                        gp.add(new Label("Ziel (%):"), 0, 1); gp.add(tfPct, 1, 1);
+
+                        dlg.getDialogPane().setContent(gp);
+                        dlg.initOwner(table.getScene() != null ? table.getScene().getWindow() : null);
+
+                        dlg.setResultConverter(bt -> {
+                            if (bt == okType) {
+                                String el = cbElem.getValue();
+                                String s  = tfPct.getText();
+                                return new InternalStdSpec(el, s == null ? "" : s.trim());
+                            }
+                            return null;
+                        });
+
+                        InternalStdSpec spec = dlg.showAndWait().orElse(null);
+                        if (spec == null || spec.pct().isBlank()) return;
+
+                        // 4) Ziel-% und aktuelle % des gewählten Elements ermitteln
+                        double desiredPct;
+                        try { desiredPct = Double.parseDouble(spec.pct().replace(',', '.')); }
+                        catch (Exception ex) {
+                            new Alert(Alert.AlertType.ERROR, "Ungültige Prozentzahl.").showAndWait();
+                            return;
+                        }
+                        if (desiredPct < 0 || desiredPct > 100) {
+                            new Alert(Alert.AlertType.ERROR, "Ziel-% muss zwischen 0 und 100 liegen.").showAndWait();
+                            return;
+                        }
+
+                        String el = spec.elem();
+                        double currPct = 0.0;
+                        {
+                            Object v = thinRow.get(el);
+                            if (v instanceof Number n) currPct = n.doubleValue();
+                            else if (v != null) {
+                                try { currPct = Double.parseDouble(v.toString().replace(',', '.')); } catch (Exception ignore) {}
+                            }
+                        }
+                        if (currPct <= 0) {
+                            new Alert(Alert.AlertType.ERROR, "Ergebnis hat für " + el + " keine positive Konzentration.").showAndWait();
+                            return;
+                        }
+
+                        // 5) Skalenfaktor
+                        double k = desiredPct / currPct;
+
+                        // 6) Skaliertes Duplikat der Dünnschicht-Zeile erstellen
+                        var scaled = new java.util.LinkedHashMap<String,Object>();
+
+                        // Spaltenstruktur wie im Table beibehalten
+                        for (TableColumn<?, ?> tc : table.getColumns()) {
+                            String col = tc.getText();
+                            if ("Name".equals(col)) continue;
+                            scaled.put(col, ""); // zunächst leeren Platzhalter
+                        }
+
+                        // Name
+                        String name = nextUniqueName("Thin IS " + el + "=" + round2(desiredPct) + "%");
+                        scaled.put("Name", name);
+
+                        // Elemente skalieren
+                        for (String sym : elemCols) {
+                            double val = 0.0;
+                            Object v = thinRow.get(sym);
+                            if (v instanceof Number n) val = n.doubleValue();
+                            else if (v != null) {
+                                try { val = Double.parseDouble(v.toString().replace(',', '.')); } catch (Exception ignore) {}
+                            }
+                            scaled.put(sym, round2(val * k));
+                        }
+
+                        // Z neu berechnen (aus %)
+                        double zSum = 0.0;
+                        for (String sym : elemCols) {
+                            double pct = 0.0;
+                            Object v = scaled.get(sym);
+                            if (v instanceof Number n) pct = n.doubleValue();
+                            else if (v != null) {
+                                try { pct = Double.parseDouble(v.toString().replace(',', '.')); } catch (Exception ignore) {}
+                            }
+                            int Zi = enumIndex(sym) + 1;
+                            zSum += Zi * (pct / 100.0);
+                        }
+                        if (scaled.containsKey("Z"))   scaled.put("Z", round2(zSum));
+                        if (scaled.containsKey("Geo")) scaled.put("Geo", ""); // explizit leer
+
+                        // 7) Einfügen + Refresh
+                        data.add(scaled);
+                        reflowColumns(table);
+                        table.refresh();
+
+                    } catch (Exception ex) {
+                        new Alert(Alert.AlertType.ERROR, "Fehler bei Internal Std:\n" + ex.getMessage()).showAndWait();
+                    }
+                });
+
+
+
 
                 HBox controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget, btnDelTarget, new Separator(),btnCopyTsv, btnCopyLatex, new Separator(),btnAddKnown);
+                if (layerType == LayerType.DUENNSCHICHT) {
+                    controls = new HBox(8, tfNewElem, btnAddElem, new Separator(), btnAddTarget, btnDelTarget, new Separator(),btnCopyTsv, btnCopyLatex, new Separator(),btnAddKnown,new Separator(), btnInternalStd);
+
+                    //controls.getChildren().addAll(new Separator(), btnInternalStd);
+                }
+
                 controls.setAlignment(Pos.CENTER_LEFT);
 
                 VBox content = new VBox(10, table, controls);

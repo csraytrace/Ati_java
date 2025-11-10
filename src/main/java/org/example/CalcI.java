@@ -304,7 +304,7 @@ public class CalcI {
         boolean aktiv = false;
 
         final int nEle = Ü.length;
-        final int mau  = Ü[0].length;
+        final int mau  = Ü[0].length;   //mau maximale Anzahl Übergänge
         Übergang[][] ret = new Übergang[nEle][mau];
 
         /* -------- Ltf wieder in [nEle][5][TauLen] formen -------------------- */
@@ -378,7 +378,7 @@ public class CalcI {
                 /* --- erster Summand (Char-Linie + Kontinuum an Kante) ------- */
                 double num1 = Tube0[i][kanteIdx]      * Kz[i]
                         * Tau0[i][kanteIdx]       * Σij0[i][kanteIdx]
-                        * Ω0[i][kanteIdx]         * ω_ij;
+                        * Ω0[i][kanteIdx]         * ω_ij;       //kein Ltf, weil ist immer 1 bei der Kantenenergie
 
                 double den1 = μ0Add[i][kanteIdx] / Pα
                         + μijkAdd[i][j]          / Pβ;
@@ -572,46 +572,109 @@ public class CalcI {
     }
 
 
+    public Übergang[][] intensitaetduennschicht(PreparedValues pv) {
+
+        /* -- Kürzel für schnelleres Tippen ----------------------------------- */
+        double   Pα   = pv.palpha();
+        double   Pβ   = pv.pbeta();
+        double[][]  Tube0   = pv.tube0();
+        double[][]  Tau0    = pv.tau0();
+        double[][]  Ω0      = pv.omega0();
+        double[][][] μ0     = pv.mu0();
+        double[][]   Σij0   = pv.sij0();
+        double[][] Tau    = pv.tau();
+        double[][][] Σij    = pv.sij();
+        double[][]   μ      = pv.mu();
+        double[]     Cnt    = pv.countrate();
+        double[][][] μ_ijk  = pv.mu_ijk();
+        double[][]   Det    = pv.det_ijk();
+        Übergang[][] Ü      = pv.alleUeberg();
+        double[][][] Σij_xyz= pv.sij_xyz();
+        double[][][] Tau_ijk= pv.tau_ijk();
+        double[]     Kz     = pv.konzNorm();          // Konzentrationen
+        double[][]   Kanten = pv.alleKanten();
+        double[]     LtfFlat= pv.ltf();               // 1-D → gleich rekonst.
+        double    energy=0.0;
+        boolean aktiv = false;
+
+        final int nEle = Ü.length;
+        final int mau  = Ü[0].length;   //mau maximale Anzahl Übergänge
+        Übergang[][] ret = new Übergang[nEle][mau];
+
+        /* -------- Ltf wieder in [nEle][5][TauLen] formen -------------------- */
+        final int tauLen = Tau[0].length;
+        double[][][] Ltf = new double[nEle][5][tauLen];
+        int p = 0;
+        for (int i = 0; i < nEle; i++)
+            for (int s = 0; s < 5; s++)
+                for (int t = 0; t < tauLen; t++)
+                    Ltf[i][s][t] = LtfFlat[p++];
+
+        /* ---------------------- Konstanten ---------------------------------- */
+        double CONST = (1 / Pα) * 30.0e-2 / (4 * Math.PI * 0.5 * 0.5);
+        CONST = 1.;
 
 
-    /**
-     * Gibt ein Übergang-Array zurück, bei dem die Intensität (getRate) aus Primär und Sekundär addiert ist.
-     * Alle anderen Felder (Schale_von, Schale_zu, Energy, Aktiv) werden wie im Primär-Feld gesetzt.
-     */
-    public static Übergang[][] addiereIntensitäten(Übergang[][] primaer, Übergang[][] sekundaer) {
 
-        int n = primaer.length;
-        int m = primaer[0].length;
-        Übergang[][] result = new Übergang[n][m];
+        /* ---------------- Hauptschleifen ------------------------------------ */
+        for (int i = 0; i < nEle; i++) {
 
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < m; j++) {
-                Übergang uPrim = primaer[i][j];
-                Übergang uSek = sekundaer[i][j];
+            // Skip, wenn Element gar keine Übergänge
+            if (Ü[i][0].getEnergy() == 0.0) continue;
 
-                if (uPrim == null) {
-                    result[i][j] = uPrim; // oder null, wie du magst
-                    continue;
+            for (int j = 0; j < mau; j++) {                 // maximale Anzahl Übergänge
+
+                Übergang u = Ü[i][j];
+                if (u.getEnergy() == 0.0) continue;            // Platzhalter überspringen
+
+                String ijk = u.getSchale_von().name();
+                Schale Schale_zu = (Schale) u.getSchale_zu();
+                Schale Schale_von = (Schale) u.getSchale_von();
+                double ω_ij = u.getRate();                     // Übergangswahrsch.
+                energy = u.getEnergy();
+                aktiv = u.isAktiv();
+
+                /* --- Kantenindex bestimmen --------------------------------- */
+                int kanteIdx;
+                if      (ijk == "K") kanteIdx = 0;
+                else if (ijk == "L1") kanteIdx = 1;
+                else if (ijk == "L2") kanteIdx = 2;
+                else                 kanteIdx = 3;
+
+                /* --- erster Summand (Char-Linie + Kontinuum an Kante) ------- */
+                double num1 = Tube0[i][kanteIdx]      * Kz[i]
+                        * Tau0[i][kanteIdx]       * Σij0[i][kanteIdx]
+                        * Ω0[i][kanteIdx]         * ω_ij;       //kein LTf, ist 1 bei Kantenenergie
+
+                double dummy = num1;
+
+                /* --- Schleife über weitere Energien ab Kantenenergie -------- */
+                int startK = (int) ((Kanten[i][kanteIdx] / pv.step())
+                        - (pv.emin() / pv.step()) + 1);
+
+                for (int k = startK; k < tauLen; k++) {
+
+                    double num2 = Cnt[k] * Kz[i]             * Tau[i][k]
+                            * Σij[i][kanteIdx][k]         * Ω0[i][kanteIdx]
+                            * ω_ij * Ltf[i][kanteIdx + 1][k];
+
+
+                    dummy += num2;
                 }
 
-                // Addiere die Intensitäten (kann bei Sekundär null sein!)
-                double intensSumme = uPrim.getRate();
-                if (uSek != null) {
-                    intensSumme += uSek.getRate();
-                }
+                /* --- Detektor-Effizienz, Konstante, record ------------------ */
+                dummy *= Det[i][j] * CONST;
 
-                // Neuer Übergang, alle Felder gleich wie Primär, außer Rate = Summe
-                result[i][j] = new Übergang(
-                        (Schale) uPrim.getSchale_von(),
-                        (Schale) uPrim.getSchale_zu(),
-                        uPrim.getEnergy(),
-                        intensSumme,
-                        uPrim.isAktiv() // oder beliebige Logik für Aktiv-Status
-                );
+
+
+                ret[i][j] = new Übergang(Schale_von,Schale_zu,energy,dummy,aktiv);
+                // Probendichte und Dicke wird einfach zusätzlich in den Geometriefaktor multipliziert
             }
         }
-        return result;
+        return ret;
     }
+
+
 
     public static double[] berechneSummenintensitaetProElement(
             Übergang[][] primaer,
@@ -761,6 +824,91 @@ public class CalcI {
         double[] rel = Arrays.stream(alteKonz).map(c -> c / finalSum * 100.0).toArray();
         return rel;
     }
+
+
+    public static double[] berechneRelKonzentrationenDünnschicht(
+            CalcI calc, PreparedValues pvStart, int maxIter
+    ) {
+        PreparedValues pv = pvStart;
+        double[] originalKonzentration = pvStart.konzNorm();
+        double[] alteKonz = originalKonzentration.clone();
+        double[] neueKonz = originalKonzentration.clone();
+
+        double threshold = 1e-6;   // Schwellwert für Abbruch
+
+        for (int iter = 0; iter < maxIter; iter++) {
+            Übergang[][] primaer = calc.intensitaetduennschicht(pv);
+            //Übergang[][] primaer = calc.primaerintensitaetBerechnen(pv);
+            //Übergang[][] sekundaer = calc.sekundaerintensitaetBerechnen(pv);
+            double[] countsArray = berechneSummenintensitaetProElementOhneSekundär(primaer);
+
+            for (int i = 0; i < countsArray.length; i++) {
+                if (countsArray[i] == 0.0) countsArray[i] = 1.0;
+            }
+
+            for (int i = 0; i < neueKonz.length; i++) {
+                neueKonz[i] *= originalKonzentration[i] / (countsArray[i]);
+            }
+
+            double sum = Arrays.stream(neueKonz).sum();
+            double[] neueKonzNorm = Arrays.stream(neueKonz).map(c -> c / sum).toArray();
+
+            // Abbruchkriterium: maximale Änderung < threshold?
+            double maxDelta = 0.0;
+            for (int i = 0; i < neueKonzNorm.length; i++) {
+                double delta = Math.abs(neueKonzNorm[i] - alteKonz[i]);
+                if (delta > maxDelta) maxDelta = delta;
+            }
+            if (maxDelta < threshold) {
+                //System.out.println("Konvergenz nach " + iter + " Iterationen");
+                alteKonz = neueKonzNorm;
+                break;
+            }
+
+            // Jetzt alteKonz updaten für den nächsten Durchlauf
+            alteKonz = neueKonzNorm;
+            neueKonz = neueKonzNorm.clone();
+            pv = mitNeuerKonzentration(pv, neueKonzNorm);
+        }
+
+        double finalSum = Arrays.stream(alteKonz).sum();
+        double[] rel = Arrays.stream(alteKonz).map(c -> c / finalSum * 100.0).toArray();
+        return rel;
+    }
+
+
+
+    public static double[] berechneSummenintensitaetProElementOhneSekundär(
+            Übergang[][] primaer
+    ) {
+        int nElem = primaer.length;
+        double[] summen = new double[nElem];
+
+        for (int i = 0; i < nElem; i++) {
+            double sum = 0.0;
+            for (int j = 0; j < primaer[i].length; j++) {
+                Übergang p = primaer[i][j];
+
+                // Es wird angenommen, dass die Übergänge in beiden Arrays an gleicher Stelle sind!
+                if (p == null || !p.isAktiv()) continue; // Nur aktive zählen!
+
+                double intens = 0.0;
+                if (p != null) intens += p.getRate();
+                sum += intens;
+            }
+            // Sicherstellen, dass nicht 0 (sonst Division durch Null in Relativanteil)
+            summen[i] = (sum == 0.0) ? 1.0 : sum;
+        }
+        return summen;
+    }
+
+
+
+
+
+
+
+
 
 
 

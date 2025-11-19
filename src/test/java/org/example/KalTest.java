@@ -72,8 +72,10 @@ public class KalTest {
             probeliste.add(probe);
         }
 
+        Kalibrierung kali = new Kalibrierung(null,null);
 
-        Kalibrierung.kalibrierung(
+
+        kali.kalibrierung(
                 paraVar,
                 grenzen,
                 stepAnzahl,

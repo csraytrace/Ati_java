@@ -302,6 +302,8 @@ public class Verbindung {
 
             //result[i] = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
             double transF = Math.exp(-fensterMue * dichte * fensterDickeCm / fensterEinfallCos);
+            //treshold
+            if (energie < 0.5) transF = 0;
             double faktor = (modulation != null) ? modulation.evaluate(energie) : 1.0;
             result[i] = transF * faktor;
         }

@@ -24,6 +24,7 @@ public abstract class RöhreBasis {
     protected List<Verbindung> Filter;
     protected final double charzucont;
     protected final double charzucontL;
+    protected double [] gesamtSpektrumPlot;
 
     protected RöhreBasis(
             String roehrenMaterialName,
@@ -89,6 +90,7 @@ public abstract class RöhreBasis {
         this.continuousSpectrum = computeContinuousSpectrum();
         this.characteristicSpectrum = computeCharacteristicSpectrum();
         this.gesamtSpektrum = berechneGesamtspektrumCountrate();
+
 
     }
 
@@ -366,6 +368,10 @@ public abstract class RöhreBasis {
     public double[] berechneGesamtspektrumCountrate() {
         // Kopie der kontinuierlichen Spektrum-Counts:
         double[] gesamtspektrum = this.continuousSpectrum.clone();
+        double[] gesamtspektrumPlot = new double[gesamtspektrum.length];
+        for (int i = 0; i < gesamtspektrum.length; i++) {
+            gesamtspektrumPlot[i] = gesamtspektrum[i] / this.step;
+        }
 
         // Linien (characteristicSpectrum) addieren
         for (Übergang peak : this.characteristicSpectrum) {
@@ -376,14 +382,17 @@ public abstract class RöhreBasis {
                 int index = (int) ((energie - this.Emin) / this.step);
                 if (index >= 0 && index < gesamtspektrum.length) {
                     gesamtspektrum[index] += intensitaet;
+                    gesamtspektrumPlot[index] += intensitaet;
                 }
             }
         }
+        this.gesamtSpektrumPlot = gesamtspektrumPlot;
 
         return gesamtspektrum;
     }
 
     public double [] getGesamtspektrum(){return this.gesamtSpektrum;}
+    public double [] getGesamtspektrumPlot(){return this.gesamtSpektrumPlot;}
     public double[] getEnergieArray()            { return roehrenMaterial.getEnergieArray(); }
     public double[] getContinuousSpectrum()      { return continuousSpectrum; }
     public java.util.List<Übergang> getCharacteristicSpectrum() { return characteristicSpectrum; }

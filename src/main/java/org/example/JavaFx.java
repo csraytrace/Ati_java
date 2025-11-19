@@ -122,12 +122,6 @@ public class JavaFx extends Application {
     private LayerType currentLayerType = LayerType.DICKSCHICHT; // Default
 
 
-
-
-
-
-
-
     // Hält (falls ein Output-Popup offen ist) dessen Data-Liste pro Ergebnisname
     private final java.util.Map<String, javafx.collections.ObservableList<java.util.Map<String,Object>>> concOpenOutputDataByName = new java.util.HashMap<>();
 
@@ -422,6 +416,7 @@ public class JavaFx extends Application {
         // Root für den Tab: START → nur inputBox (keine Teilung)
         parametersRoot = new BorderPane();
         parametersRoot.setCenter(inputBox);
+        hookEnergyChangeListeners();
 
         // Tab liefern
         return new Tab("Tube", parametersRoot);
@@ -626,8 +621,13 @@ public class JavaFx extends Application {
         commitTubeEdits();
         lastTubePlot = TubePlot.CONTINUOUS;
         RöhreBasis tube = buildTubeFromUI();
+        double [] cont = tube.getContinuousSpectrum();
+        double[] ContinuousSpectrum = new double[cont.length];
+        for (int i = 0; i < cont.length; i++) {
+            ContinuousSpectrum[i] = cont[i] / globalStep();
+        }
         LineChart<Number,Number> chart = ensureTubeChart("Tube – Continuous", "Counts");
-        addSeriesFromArrays(chart, "Continuous", tube.getEnergieArray(), tube.getContinuousSpectrum());
+        addSeriesFromArrays(chart, "Continuous", tube.getEnergieArray(), ContinuousSpectrum);
     }
 
     private void plotTubeCharacteristic() {
@@ -644,7 +644,7 @@ public class JavaFx extends Application {
         lastTubePlot = TubePlot.TOTAL;
         RöhreBasis tube = buildTubeFromUI();
         LineChart<Number,Number> chart = ensureTubeChart("Tube – Total", "Counts");
-        addSeriesFromArrays(chart, "Total", tube.getEnergieArray(), tube.getGesamtspektrum());
+        addSeriesFromArrays(chart, "Total", tube.getEnergieArray(), tube.getGesamtspektrumPlot());
     }
 
 
@@ -1610,8 +1610,8 @@ public class JavaFx extends Application {
 
     private Tab buildFiltersTab() {
         // Linke Spalte: Röhrenfilter
-        VBox tubeCol = buildFilterColumn("Röhrenfilter", tubeFilterVerbindungen, tubeFormulaText, tubeFilterUse);
-        VBox detCol  = buildFilterColumn("Detektorfilter", detFilterVerbindungen, detFormulaText, detFilterUse);
+        VBox tubeCol = buildFilterColumn("Tube Filter", tubeFilterVerbindungen, tubeFormulaText, tubeFilterUse);
+        VBox detCol  = buildFilterColumn("Detector Filter", detFilterVerbindungen, detFormulaText, detFilterUse);
 
 
         GridPane grid = new GridPane();
@@ -1683,14 +1683,14 @@ public class JavaFx extends Application {
 
         // linke/rechte Spalte (deine bestehende buildSegmentColumn-Version weiterverwenden!)
         VBox tubeCol = buildSegmentColumn(
-                "Röhren: Funktions-Filter",
+                "Tube: Functionfilter",
                 tubeFuncSegs,
                 tubeFuncDefault,
                 () -> applySegmentsToVerbindungen(tubeFilterVerbindungen, tubeFuncSegs, tubeFuncDefault.get())
         );
 
         VBox detCol  = buildSegmentColumn(
-                "Detektor: Funktions-Filter",
+                "Detector: Functionfilter",
                 detFuncSegs,
                 detFuncDefault,
                 () -> applySegmentsToVerbindungen(detFilterVerbindungen, detFuncSegs, detFuncDefault.get())
@@ -2004,7 +2004,7 @@ public class JavaFx extends Application {
 
                 // Zeilen
                 HBox row2    = new HBox(10, chkUse, new Label("Range:"), btnLeft, tfA, new Label(","), tfB, btnRight);
-                HBox rowExpr = new HBox(10, new Label("expr:"), tfExpr);
+                HBox rowExpr = new HBox(10, new Label("y(x)="), tfExpr);
                 HBox rowClamp= new HBox(10, cbClamp, new Label("y ∈ ["), tfYmin, new Label(","), tfYmax, new Label("]"), btnShow, btnDel);
 
                 row2.setAlignment(Pos.CENTER_LEFT);
@@ -2306,10 +2306,20 @@ public class JavaFx extends Application {
 
 
     private void commitAllTextFields(Node root) {
-        root.lookupAll(".text-field").forEach(n -> {
-            if (n instanceof TextField tf) tf.fireEvent(new javafx.event.ActionEvent());
-        });
+        // während wir künstlich ActionEvents feuern,
+        // sollen die Energy-Listener NICHT reagieren
+        suppressEnergyHandler = true;
+        try {
+            root.lookupAll(".text-field").forEach(n -> {
+                if (n instanceof TextField tf) {
+                    tf.fireEvent(new javafx.event.ActionEvent());
+                }
+            });
+        } finally {
+            suppressEnergyHandler = false;
+        }
     }
+
 
 
 
@@ -3206,7 +3216,7 @@ public class JavaFx extends Application {
 
     private Tab buildConcentrationsTab() {
         // --- Titel ---
-        Label title = new Label("Konzentrations-Dateien");
+        Label title = new Label("Input Data");
         title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
 
         // --- Liste der eingelesenen Dateien ---
@@ -3272,7 +3282,7 @@ public class JavaFx extends Application {
             }
         });
 
-        Button btnOpen = new Button("Öffnen");
+        Button btnOpen = new Button("Open");
         btnOpen.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
         btnOpen.setOnAction(e -> {
             var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
@@ -3281,7 +3291,7 @@ public class JavaFx extends Application {
             openConcPopup(sel, w);
         });
 
-        Button btnRemove = new Button("Entfernen");
+        Button btnRemove = new Button("Remove");
         btnRemove.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
         btnRemove.setOnAction(e -> {
             var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
@@ -3296,7 +3306,7 @@ public class JavaFx extends Application {
         controls.setAlignment(Pos.CENTER_LEFT);
 
         // --- Auswahl unter der Liste: Combo + Anzeigen ---
-        Label selLbl = new Label("Datei-Auswahl:");
+        Label selLbl = new Label("Data-Selection:");
         concFileCombo = new ComboBox<>(concPaths);
         javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
             @Override protected void updateItem(java.nio.file.Path p, boolean empty) {
@@ -3323,7 +3333,7 @@ public class JavaFx extends Application {
         HBox.setHgrow(concFileCombo, Priority.ALWAYS);
 
         // --- Dark-Optionen (Zeile mit 3 Inputs) ---
-        chkUseDark  = new CheckBox("Dark-Matrix verwenden");
+        chkUseDark  = new CheckBox("Use Dark-Matrix");
 
         Label lblZ      = new Label("Z:");
         tfDarkZ         = new TextField();  tfDarkZ.setPromptText("z.B. 21.47"); tfDarkZ.setPrefColumnCount(8);
@@ -3331,7 +3341,7 @@ public class JavaFx extends Application {
         Label lblBinder = new Label("Binder (optional):");
         tfDarkBinder    = new TextField();  tfDarkBinder.setPromptText("z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(18);
 
-        Label lblFrac   = new Label("Anteil (optional):");
+        Label lblFrac   = new Label("Binder-fraction (optional):");
         tfDarkBinderFrac= new TextField(); tfDarkBinderFrac.setPromptText("z.B. 1.04/5.52"); tfDarkBinderFrac.setPrefColumnCount(10);
 
         HBox rowDarkA = new HBox(10, chkUseDark, lblZ, tfDarkZ, lblBinder, tfDarkBinder, lblFrac, tfDarkBinderFrac);
@@ -3374,14 +3384,14 @@ public class JavaFx extends Application {
         }
 
         // --- Berechnen ---
-        Button btnCalc = new Button("Berechnen");
+        Button btnCalc = new Button("Calculate");
         btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
         btnCalc.setOnAction(e -> {
             currentLayerType = LayerType.DICKSCHICHT;
             runConcCalculation();
         });
 
-        Button btnCalcThin = new Button("Berechnen (Dünnschicht)");
+        Button btnCalcThin = new Button("Calculate (Thin Layer)");
         btnCalcThin.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
         btnCalcThin.setOnAction(e -> {
             currentLayerType = LayerType.DUENNSCHICHT;
@@ -3424,14 +3434,20 @@ public class JavaFx extends Application {
         concResultsListView.setOnMouseClicked(e -> {
             if (e.getClickCount() == 2) {
                 String base = concResultsListView.getSelectionModel().getSelectedItem();
-                if (base != null) {
-                    javafx.stage.Window w = concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null;
-                    if (currentLayerType == LayerType.DUENNSCHICHT) {
-                        openOutputPopupForBaseDuennschicht(java.util.List.of(base), w);
-                    } else {
-                        openOutputPopupForBaseDickschicht(java.util.List.of(base), w);
-                    }
+                if (base == null) return;
 
+                // Prüfen, ob "Thin" im Namen vorkommt (case-insensitive)
+                boolean isThin = base.toLowerCase(java.util.Locale.ROOT).contains("thin");
+
+                // LayerType entsprechend setzen
+                currentLayerType = isThin ? LayerType.DUENNSCHICHT : LayerType.DICKSCHICHT;
+
+                // Passendes Popup öffnen
+                Window w = concResultsListView.getScene() != null ? concResultsListView.getScene().getWindow() : null;
+                if (isThin) {
+                    openOutputPopupForBaseDuennschicht(java.util.List.of(base), w);
+                } else {
+                    openOutputPopupForBaseDickschicht(java.util.List.of(base), w);
                 }
             }
         });
@@ -3453,7 +3469,7 @@ public class JavaFx extends Application {
         left.setPadding(new Insets(14));
         VBox.setVgrow(list, Priority.ALWAYS);
 
-        return new Tab("Konzentrationen", left);
+        return new Tab("Calculation", left);
     }
 
 
@@ -4418,7 +4434,7 @@ public class JavaFx extends Application {
 
             // 6) Ergebnis-Basisname -> eigenes „Dünn“-Set
             String baseOrig = stripExt(file.getFileName().toString());
-            String base = baseOrig + " Dünn";                 // <<<< eigenes Set
+            String base = baseOrig + " Thin";                 // <<<< eigenes Set
             String uniqueName = nextUniqueName(base);
 
             // Elemente nach Z sortieren (wie normaler Pfad — aber ohne Z-/Geo-Ausgabe)
@@ -4470,6 +4486,189 @@ public class JavaFx extends Application {
             ).showAndWait();
         }
     }
+
+    // verhindert, dass die Energy-Listener während commitAllTextFields reagieren
+    private boolean suppressEnergyHandler = false;
+
+    // verhindert, dass onEnergyChanged rekursiv / verschachtelt läuft
+    private boolean isRebuildingFilters = false;
+
+
+    private void rebuildAllFilterVerbindungenOnEnergyChange() {
+        double useEmin  = (globalEmin <= 0 ? globalStep() : globalEmin);
+        double useEmax  = globalEmax();
+        double useStep  = globalStep();
+        Funktionen fk   = new FunktionenImpl();
+
+        // --- Tube-Filter nur neu aufbauen, wenn alles nötige da ist ---
+        if (tubeFilterVerbindungen != null && tubeFormulaText != null && tubeFilterUse != null) {
+            rebuildFilterList(
+                    tubeFilterVerbindungen,
+                    tubeFormulaText,
+                    tubeFilterUse,
+                    fk, useEmin, useEmax, useStep
+            );
+
+            if (tubeFuncDefault != null) {
+                applySegmentsToVerbindungen(
+                        tubeFilterVerbindungen,
+                        tubeFuncSegs,
+                        tubeFuncDefault.get()
+                );
+            }
+        }
+
+        // --- Detektor-Filter nur neu aufbauen, wenn alles nötige da ist ---
+        if (detFilterVerbindungen != null && detFormulaText != null && detFilterUse != null) {
+            rebuildFilterList(
+                    detFilterVerbindungen,
+                    detFormulaText,
+                    detFilterUse,
+                    fk, useEmin, useEmax, useStep
+            );
+
+            if (detFuncDefault != null) {
+                applySegmentsToVerbindungen(
+                        detFilterVerbindungen,
+                        detFuncSegs,
+                        detFuncDefault.get()
+                );
+            }
+        }
+    }
+
+
+
+
+
+    private void rebuildFilterList(
+            ObservableList<Verbindung> list,
+            Map<Verbindung, String> textMap,
+            Map<Verbindung, Boolean> useMap,
+            Funktionen fk,
+            double emin, double emax, double step
+    ) {
+        // Alte Liste sichern
+        List<Verbindung> old = new ArrayList<>(list);
+
+        // neue Maps für die rekonstruierten Verbindungen
+        Map<Verbindung, String> newText = new IdentityHashMap<>();
+        Map<Verbindung, Boolean> newUse = new IdentityHashMap<>();
+
+        list.clear();
+
+        for (Verbindung vOld : old) {
+            String formula = textMap.getOrDefault(vOld, "Al");
+            double rho     = vOld.getDichte();
+            double dCm     = vOld.getFensterDickeCm();
+            boolean use    = useMap.getOrDefault(vOld, Boolean.TRUE);
+
+            // Verbindung mit neuem Energiegitter erzeugen
+            Verbindung parsed = fk.parseVerbindung(formula, emin, emax, step, DATA_FILE);
+            Verbindung vNew   = new Verbindung(parsed.getSymbole(), parsed.getKonzentrationen(),
+                    emin, emax, step, DATA_FILE, rho);
+
+            vNew.setFensterDickeCm(dCm);
+            vNew.setModulationIdentitaet();  // Funktionsfilter kommen danach
+
+            list.add(vNew);
+            newText.put(vNew, formula);
+            newUse.put(vNew, use);
+        }
+
+        textMap.clear();
+        textMap.putAll(newText);
+        useMap.clear();
+        useMap.putAll(newUse);
+    }
+
+
+
+    private void hookEnergyChangeListeners() {
+        // X-Ray Tube Voltage (kV)
+        xRayTubeVoltage.setOnAction(e -> {
+            if (suppressEnergyHandler) {
+                // Event stammt aus commitAllTextFields → ignorieren
+                return;
+            }
+            onEnergyChanged();
+        });
+        xRayTubeVoltage.focusedProperty().addListener((obs, was, is) -> {
+            if (!is) {
+                xRayTubeVoltage.fireEvent(new javafx.event.ActionEvent());
+            }
+        });
+
+        // Energy Step
+        energieStep.setOnAction(e -> {
+            if (suppressEnergyHandler) {
+                return;
+            }
+            onEnergyChanged();
+        });
+        energieStep.focusedProperty().addListener((obs, was, is) -> {
+            if (!is) {
+                energieStep.fireEvent(new javafx.event.ActionEvent());
+            }
+        });
+    }
+
+
+    private void onEnergyChanged() {
+        // Falls wir schon mitten in einem Rebuild/Plot sind, nicht nochmal reinlaufen
+        if (isRebuildingFilters) {
+            return;
+        }
+
+        try {
+            isRebuildingFilters = true;
+
+            // 1. Eingaben aus den Textfeldern „committen“
+            //    (darin wird commitAllTextFields(...) aufgerufen,
+            //    das jetzt suppressEnergyHandler benutzt)
+            commitTubeEdits();
+
+            // 2. Filter-Verbindungen an neues Energiegitter anpassen
+            rebuildAllFilterVerbindungenOnEnergyChange();
+
+            // 3. Falls ein Röhrenplot offen ist, mit neuen Werten neu zeichnen
+            replotLastTube();
+
+        } finally {
+            isRebuildingFilters = false;
+        }
+    }
+
+
+    private boolean isValidDouble(TextField tf) {
+        if (tf == null) return false;
+        String t = tf.getText();
+        if (t == null || t.isBlank()) return false;
+        try {
+            Double.parseDouble(t.replace(',', '.'));
+            return true;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+
+
+    private void hookEnergyChangeListeners1() {
+        xRayTubeVoltage.setOnAction(e -> System.out.println("kV changed"));
+        xRayTubeVoltage.focusedProperty().addListener((obs, was, is) -> {
+            if (!is) xRayTubeVoltage.fireEvent(new javafx.event.ActionEvent());
+        });
+
+        energieStep.setOnAction(e -> System.out.println("Step changed"));
+        energieStep.focusedProperty().addListener((obs, was, is) -> {
+            if (!is) energieStep.fireEvent(new javafx.event.ActionEvent());
+        });
+    }
+
+
+
+
 
 
 
@@ -4881,8 +5080,10 @@ public class JavaFx extends Application {
                     rbPercent.setToggleGroup(tg);
                     rbFormula.setSelected(true);
 
-                    TextField tfFormula = new TextField("1 Al2O3 + 2 Fe2O3");
-                    TextField tfPercent = new TextField("35.73 O + 17.64 Al + 46.63 Fe");
+                    TextField tfFormula = new TextField("");
+                    TextField tfPercent = new TextField("");
+                    tfFormula.setPromptText("1 Al2O3 + 2 Fe2O3");
+                    tfPercent.setPromptText("35.73 O + 17.64 Al + 46.63 Fe");
                     tfPercent.setDisable(true);
 
                     rbFormula.selectedProperty().addListener((o, ov, nv) -> {
@@ -5043,8 +5244,8 @@ public class JavaFx extends Application {
 
                         // 3) Dialog mit ComboBox (Element) + Ziel-% (TextField)
                         Dialog<InternalStdSpec> dlg = new Dialog<>();
-                        dlg.setTitle("Internal Standard (Dünnschicht)");
-                        dlg.setHeaderText("Wähle Element und Ziel-Konzentration in %");
+                        dlg.setTitle("Internal Standard");
+                        dlg.setHeaderText("Choose element and concentration in %");
 
                         ButtonType okType = new ButtonType("OK", ButtonBar.ButtonData.OK_DONE);
                         dlg.getDialogPane().getButtonTypes().addAll(okType, ButtonType.CANCEL);
@@ -5057,7 +5258,7 @@ public class JavaFx extends Application {
 
                         GridPane gp = new GridPane(); gp.setHgap(10); gp.setVgap(10);
                         gp.add(new Label("Element:"), 0, 0); gp.add(cbElem, 1, 0);
-                        gp.add(new Label("Ziel (%):"), 0, 1); gp.add(tfPct, 1, 1);
+                        gp.add(new Label("Concentration (%):"), 0, 1); gp.add(tfPct, 1, 1);
 
                         dlg.getDialogPane().setContent(gp);
                         dlg.initOwner(table.getScene() != null ? table.getScene().getWindow() : null);

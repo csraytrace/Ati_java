@@ -86,7 +86,7 @@ public class TestBobyqa {
 
 
 
-        Kali1 kali = new Kali1(null,null);
+        Kalibrierung kali = new Kalibrierung(null,null);
 
 
         // NLLS-Aufruf mit BOBYQA:
@@ -108,7 +108,7 @@ public class TestBobyqa {
 
 
 
-        double[] geo = Kali1.berechneGeo(
+        double[] geo = Kalibrierung.berechneGeo(
                 optimierteParameter,       // params
                 paraVar,                   // para_var (List<String[]>)
                 probeliste,                // proben (List<Probe>)
@@ -120,7 +120,7 @@ public class TestBobyqa {
         for (int i = 0; i < geo.length; i++) {
             System.out.println(geo[i]);
         }
-        System.out.println(Kali1.mittlereAbweichung(geo));
+        System.out.println(Kalibrierung.mittlereAbweichung(geo));
 
 
 

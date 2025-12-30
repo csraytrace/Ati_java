@@ -42,9 +42,12 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import javafx.util.StringConverter;
 
 // Preferences
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.prefs.Preferences;
+
+import static org.example.MathParser.parseConstExpression;
 
 public class JavaFx extends Application {
 
@@ -288,8 +291,19 @@ public class JavaFx extends Application {
 
         stage.setTitle("Rayquant");
         stage.setScene(scene);
-        var url = Objects.requireNonNull(getClass().getResource("/dino.png"), "Icon nicht gefunden!");
-        stage.getIcons().add(new Image(url.toExternalForm()));
+
+
+        //var url = Objects.requireNonNull(getClass().getResource("/dino.png"), "Icon nicht gefunden!");
+        //stage.getIcons().add(new Image(url.toExternalForm()));
+
+        var url = getClass().getResource("/Dino.png");  // Groß-/Kleinschreibung wie im Projekt
+        if (url != null) {
+            stage.getIcons().add(new Image(url.toExternalForm()));
+        } else {
+            System.err.println("WARNUNG: /Dino.png nicht gefunden (stürze aber nicht ab)");
+        }
+
+
         stage.show();
     }
 
@@ -375,11 +389,22 @@ public class JavaFx extends Application {
          //       "C:\\Users\\julia\\OneDrive\\Dokumente\\A_Christian\\Masterarbeit\\Bilder Gui\\Röhre.png"
         //).toURI().toString()));
 
-        var imgUrl = java.util.Objects.requireNonNull(
-                getClass().getResource("/roehre.png"),
-                "Bild nicht gefunden!"
-        );
-        previewImage.setImage(new Image(imgUrl.toExternalForm()));
+        //var imgUrl = java.util.Objects.requireNonNull(
+        //        getClass().getResource("/roehre.png"),
+        //        "Bild nicht gefunden!"
+        //);
+        //previewImage.setImage(new Image(imgUrl.toExternalForm()));
+
+        var imgUrl = getClass().getResource("/roehre.PNG");
+        if (imgUrl != null) {
+            previewImage.setImage(new Image(imgUrl.toExternalForm()));
+        } else {
+            System.err.println("WARNUNG: /roehre.png nicht gefunden (stürze aber nicht ab)");
+        }
+
+
+
+
 
 // ODER aus Ressourcen:
 // var url = getClass().getResource("/img/czuc0.8.png");
@@ -810,11 +835,11 @@ public class JavaFx extends Application {
         detectorMaterial = new TextField();
         detectorMaterial.setPrefColumnCount(breite);
 
-        Label lblInactiveLayer = new Label("Inactive Layer [µm]:");
+        Label lblInactiveLayer = new Label("Dead Layer [µm]:");
         inactiveLayer = new TextField();
         inactiveLayer.setPrefColumnCount(breite);
 
-        Label lblActiveLayer = new Label("Active Layer [mm]:");
+        Label lblActiveLayer = new Label("Layer Thickness [mm]:");
         activeLayer = new TextField();
         activeLayer.setPrefColumnCount(breite);
 
@@ -841,13 +866,19 @@ public class JavaFx extends Application {
          //           "C:\\\\Users\\\\julia\\\\OneDrive\\\\Dokumente\\\\A_Christian\\\\Masterarbeit\\\\Masterarbeit\\\\Massenstreukoeffizienten.png"
          //   ).toURI().toString()));
         //} catch (Exception ignore) {}
+        URL imgUrl = getClass().getResource("/Detektor.png");
+        if (imgUrl != null) {
+            previewImage2.setImage(new Image(imgUrl.toExternalForm()));
+        } else {
+            System.err.println("WARNUNG: /Detektor.png nicht gefunden (stürze aber nicht ab)");
+        }
 
 
-        var imgUrl = java.util.Objects.requireNonNull(
-                getClass().getResource("/Detektor.png"),
-                "Bild nicht gefunden!"
-        );
-        previewImage2.setImage(new Image(imgUrl.toExternalForm()));
+        //var imgUrl = java.util.Objects.requireNonNull(
+        //        getClass().getResource("/Detektor.png"),
+        //        "Bild nicht gefunden!"
+        //);
+        //previewImage2.setImage(new Image(imgUrl.toExternalForm()));
 
 
 
@@ -2487,8 +2518,20 @@ public class JavaFx extends Application {
                 ui.tubeModel.setValue(tubeModel);
             }
 
-            ui.windowMaterialDet.setText(nullToEmpty(windowMaterialDet));
-            ui.thicknessWindowDet.setText(doubleToStr(thicknessWindowDet));
+            if (ui.windowMaterialDet != null) {
+                ui.windowMaterialDet.setText(nullToEmpty(windowMaterialDet));
+            } else {
+                System.err.println("WARNUNG: windowMaterialDet ist null – applyToUI wurde zu früh aufgerufen");
+            }
+
+            //ui.windowMaterialDet.setText(nullToEmpty(windowMaterialDet));
+
+            if (ui.thicknessWindowDet != null) {
+                ui.thicknessWindowDet.setText(doubleToStr(thicknessWindowDet));
+            } else {
+                System.err.println("WARNUNG: thicknessWindowDet ist null – applyToUI wurde zu früh aufgerufen");
+            }
+            //ui.thicknessWindowDet.setText(doubleToStr(thicknessWindowDet));
             ui.contactlayerDet.setText(nullToEmpty(contactlayerDet));
             ui.contactlayerThicknessDet.setText(doubleToStr(contactlayerThicknessDet));
             ui.detectorMaterial.setText(nullToEmpty(detectorMaterial));
@@ -3341,7 +3384,7 @@ public class JavaFx extends Application {
         Label lblBinder = new Label("Binder (optional):");
         tfDarkBinder    = new TextField();  tfDarkBinder.setPromptText("z.B. 1 C38H76N2O2"); tfDarkBinder.setPrefColumnCount(18);
 
-        Label lblFrac   = new Label("Binder-fraction (optional):");
+        Label lblFrac   = new Label("Binder Mass Fraction = m_binder / m_total (optional):");
         tfDarkBinderFrac= new TextField(); tfDarkBinderFrac.setPromptText("z.B. 1.04/5.52"); tfDarkBinderFrac.setPrefColumnCount(10);
 
         HBox rowDarkA = new HBox(10, chkUseDark, lblZ, tfDarkZ, lblBinder, tfDarkBinder, lblFrac, tfDarkBinderFrac);
@@ -5848,21 +5891,11 @@ public class JavaFx extends Application {
     }
 
 
-    /** akzeptiert "a/b" oder direkten Anteil "0.1884" */
     private static double parseBinderFraction(String s) {
-        if (s == null || s.isBlank()) return 0.0;
-        s = s.trim();
-        if (s.contains("/")) {
-            String[] ab = s.split("/");
-            if (ab.length == 2) {
-                Double a = safeDouble(ab[0]);
-                Double b = safeDouble(ab[1]);
-                if (a != null && b != null && b != 0.0) return a / b;
-            }
-        }
-        Double v = safeDouble(s);
-        return v == null ? 0.0 : v;
+        // Wenn du wie bisher bei Fehlern 0 willst:
+        return parseConstExpression(s, 0.0);
     }
+
 
     private static Double round2(Double v) {
         if (v == null) return null;

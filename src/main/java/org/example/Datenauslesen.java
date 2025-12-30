@@ -1,8 +1,7 @@
 package org.example;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -34,21 +33,41 @@ public class Datenauslesen {
         List<String[]> liste = new ArrayList<>();
 
         // Datei einlesen
-        try (BufferedReader br = new BufferedReader(new FileReader(dateipfad))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                // Zeile trimmen (entfernt führende und endende Leerzeichen)
-                line = line.trim();
-                // Entferne abschließendes Komma (falls vorhanden)
-                if (line.endsWith(",")) {
-                    line = line.substring(0, line.length() - 1);
+        try {
+            BufferedReader br;
+
+            File f = new File(dateipfad);
+
+            if (f.isAbsolute() || f.exists()) {
+                // 1) „normaler“ Pfad: echte Datei im Dateisystem
+                br = new BufferedReader(
+                        new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)
+                );
+            } else {
+                // 2) Versuch, die Datei als Resource aus dem JAR zu laden (z.B. MCMASTER.TXT in src/main/resources)
+                InputStream in = getClass().getResourceAsStream("/" + dateipfad);
+                if (in == null) {
+                    throw new FileNotFoundException("Datei " + dateipfad + " nicht gefunden (weder als Datei noch als Resource)");
                 }
-                // Zeile anhand von ":" aufteilen
-                String[] parts = line.split(":");
-                liste.add(parts);
+                br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            }
+
+            try (br) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    line = line.trim();
+                    if (line.endsWith(",")) {
+                        line = line.substring(0, line.length() - 1);
+                    }
+                    String[] parts = line.split(":");
+                    liste.add(parts);
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
+            // Falls etwas schiefgeht, lieber hier abbrechen, statt mit leerer Liste weiterzumachen:
+            this.daten = new ArrayList<>();
+            return;
         }
 
         // Suche nach dem passenden Index: index_i

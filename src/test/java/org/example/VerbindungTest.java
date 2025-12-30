@@ -16,8 +16,9 @@ public class VerbindungTest {
         double Emax = 30;
         double step = 0.01;
         //String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
-        String ver1 = "Fe2NiCrMoCuC";
-        String ver2 = "1 Al2O3 + 2 Fe2O3";
+        String ver1 = "C10H8O4";
+        //String ver2 = "0.844 C10H8O4 + 0.156 TiO2";
+        String ver2 = "15.57 TiO2 + 84.43 C10H8O4";
 
         Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
         //System.out.println(v2.getWeight() / v1.getWeight() );
@@ -28,15 +29,19 @@ public class VerbindungTest {
         }
         System.out.println(v1.getDichte());
         System.out.println(v1.getWeight());
+        System.out.println(v1.Z_gemittelt());
 
         Verbindung v2 = f.parseVerbindung(ver2,Emin, Emax, step, "McMaster.txt");
+        v2.zuAtomprozent();
         double[] konz2 = v2.getKonzentrationen();
         String[] symbol2 = v2.getSymbole();
         for (int i = 0; i < konz2.length; i++) {
             System.out.printf("Konzentration Komponente %s: %.6f%n", symbol2[i], konz2[i]);
         }
+
         System.out.println(v2.getDichte());
         System.out.println(v2.getWeight());
+        System.out.println(v2.Z_gemittelt());
 
 
         v1.zuAtomprozent();

@@ -149,5 +149,29 @@ public final class MathParser {
         }
         return defaultValue; // außerhalb: unverändert defaultValue
     }
+
+
+
+
+    public static double parseConstExpression(String s, double fallback) {
+        if (s == null) return fallback;
+        s = s.trim();
+        if (s.isEmpty()) return fallback;
+
+        // Optional: Dezimalkomma erlauben
+        s = s.replace(',', '.');
+
+        Expression e = new Expression(s);
+
+        // Syntax prüfen, sonst fallback
+        if (!e.checkSyntax()) return fallback;
+
+        double v = e.calculate();
+
+        // NaN/Inf abfangen (Division durch 0, ln(-1), etc.)
+        if (Double.isNaN(v) || Double.isInfinite(v)) return fallback;
+
+        return v;
+    }
 }
 

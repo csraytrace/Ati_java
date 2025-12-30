@@ -39,7 +39,7 @@ public class KlaudProbe {
         Verbindung v1 = f.parseVerbindung(ver1,Emin, Emax, step, "McMaster.txt");
 
 
-        v1.multipliziereKonzentrationen(1/5.67);
+        v1.multipliziereKonzentrationen(1/5.15);
 
         List<Verbindung> filter = new ArrayList<>();
         // Beispiel: Verbindung mit Dichte 0.1 und Symbol "Be"
@@ -96,7 +96,7 @@ public class KlaudProbe {
                 8.56937060e-11,             // Totschicht (µm)
                 3,                // activeLayer (mm)
                 null,            // Filter-Liste
-                filter,
+                null,
                 v1
         );
 
@@ -106,7 +106,7 @@ public class KlaudProbe {
 
         double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
+        //calcDark.printOptimizedResult(optimum, darkMatrix, Z);
 
 
 

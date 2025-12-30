@@ -68,6 +68,38 @@
           <mainClass>org.example.JavaFx</mainClass>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <!-- Kein dependency-reduced-pom erzeugen -->
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+
+              <!-- Main-Class ins Manifest schreiben -->
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>org.example.JavaFx</mainClass>
+                </transformer>
+              </transformers>
+
+              <!-- Optional: JavaFX nicht mit in das Fat-JAR schieben -->
+              <artifactSet>
+                <excludes>
+                  <exclude>org.openjfx:javafx-controls</exclude>
+                  <exclude>org.openjfx:javafx-fxml</exclude>
+                </excludes>
+              </artifactSet>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

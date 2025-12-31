@@ -42,8 +42,11 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import javafx.util.StringConverter;
 
 // Preferences
+import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.prefs.Preferences;
 
@@ -152,6 +155,10 @@ public class JavaFx extends Application {
     }
 
 
+    private TextField tfGeoTarget;
+    private Button btnOptGeo;
+
+
 
 
     @Override
@@ -201,49 +208,66 @@ public class JavaFx extends Application {
 
 
         String darkCss = """
-    .root {
-        /* Basisfarben */
-        -fx-base: #2b2b2b;                      /* veraltet, wird aber von Modena-Lookups genutzt */
-        -fx-background: #2b2b2b;                /* App-Hintergrund */
-        -fx-control-inner-background: #3c3f41;  /* Hintergründe in Controls (Table, TextField, …) */
+.root {
+    -fx-base: #2b2b2b;
+    -fx-background: #2b2b2b;
+    -fx-control-inner-background: #3c3f41;
 
-        /* WICHTIG: Looked-up colors bereitstellen (Modena-abhängig) */
-        -fx-box-border: derive(-fx-base, 35%);
-        -fx-text-background-color: derive(-fx-base, 80%);
-        -fx-shadow-highlight-color: transparent;
+    /* feste Farben statt derive(...) */
+    -fx-box-border: #5a5a5a;
+    -fx-text-background-color: #ffffff;
 
-        /* Standard-Schriftfarbe */
-        -fx-text-fill: white;
-    }
+    -fx-shadow-highlight-color: transparent;
+}
 
-    /* Texte in gängigen Controls */
-    .label, .menu, .menu-item, .tab-label, .table-view, .list-view, .text-field, .text-area {
-        -fx-text-fill: white;
-    }
+.label, .menu, .menu-item, .tab-label, .table-view, .list-view, .text-field, .text-area {
+    -fx-text-fill: white;
+}
 
-    /* Tabellen/Listen-Kontraste */
-    .table-row-cell, .list-cell {
-        -fx-background-color: -fx-control-inner-background;
-        -fx-text-fill: white;
-        -fx-border-color: -fx-box-border;
-    }
+.table-row-cell, .list-cell {
+    -fx-background-color: -fx-control-inner-background;
+    -fx-text-fill: white;
+    -fx-border-color: -fx-box-border;
+}
 
-    /* Kopfzeilen/Headers von Tabellen */
-    .column-header, .table-view .column-header-background {
-        -fx-background-color: derive(-fx-base, 15%);
-        -fx-text-fill: white;
-        -fx-border-color: -fx-box-border;
-    }
-    """;
+.column-header, .table-view .column-header-background {
+    -fx-background-color: #363636;
+    -fx-text-fill: white;
+    -fx-border-color: -fx-box-border;
+}
+""";
 
 
+
+        String darkCssUrl = null;
+        try {
+            Path tmpCss = Files.createTempFile("dark-", ".css");
+            Files.writeString(tmpCss, darkCss, StandardCharsets.UTF_8);
+
+            // optional: temp file beim JVM-Exit löschen
+            tmpCss.toFile().deleteOnExit();
+
+            darkCssUrl = tmpCss.toUri().toString();
+        } catch (IOException ex) {
+            ex.printStackTrace(); // oder Logger
+            // Fallback: Dark mode deaktivieren oder bei Base64 bleiben
+        }
+
+
+        final String finalDarkCssUrl = darkCssUrl;
         darkModeToggle.selectedProperty().addListener((obs, o, on) -> {
-            scene.getStylesheets().clear();
+            if (finalDarkCssUrl == null) return;
+
             if (on) {
-                String cssB64 = Base64.getEncoder().encodeToString(darkCss.getBytes(StandardCharsets.UTF_8));
-                scene.getStylesheets().add("data:text/css;base64," + cssB64);
+                if (!scene.getStylesheets().contains(finalDarkCssUrl)) {
+                    scene.getStylesheets().add(finalDarkCssUrl);
+                }
+            } else {
+                scene.getStylesheets().remove(finalDarkCssUrl);
             }
         });
+
+
 
 
         Runnable updateSigmaPrompt = () -> {
@@ -3426,6 +3450,33 @@ public class JavaFx extends Application {
             darkGrid.add(tb, i, 1);
         }
 
+
+        // --- NEU: Geo-Target -> Dark-Verteilung optimieren ---
+        Label lblGeo = new Label("Geo target:");
+        tfGeoTarget = new TextField();
+        tfGeoTarget.setPromptText("z.B. 6.2918e-07");
+        tfGeoTarget.setPrefColumnCount(12);
+
+// deaktivieren, wenn Dark nicht aktiv
+        tfGeoTarget.disableProperty().bind(chkUseDark.selectedProperty().not());
+
+        btnOptGeo = new Button("Optimize Dark for Geo");
+
+// nur aktiv, wenn Datei gewählt UND Dark aktiv
+        btnOptGeo.disableProperty().bind(
+                Bindings.isNull(concFileCombo.valueProperty())
+                        .or(chkUseDark.selectedProperty().not())
+                        .or(geoRunning)   // <- neu
+        );
+
+
+// Aktion: nur Verteilung berechnen und in UI schreiben
+        btnOptGeo.setOnAction(e -> runGeoOptimization());
+
+        HBox rowGeo = new HBox(10, lblGeo, tfGeoTarget, btnOptGeo);
+        rowGeo.setAlignment(Pos.CENTER_LEFT);
+
+
         // --- Berechnen ---
         Button btnCalc = new Button("Calculate");
         btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
@@ -3446,7 +3497,7 @@ public class JavaFx extends Application {
         rowActions.setAlignment(Pos.CENTER_LEFT);
 
         // --- Block unterhalb der Datei-Liste ---
-        VBox underList = new VBox(8, rowFile, rowDarkA, darkGrid, rowActions);
+        VBox underList = new VBox(8, rowFile, rowDarkA, darkGrid, rowGeo, rowActions);
 
         // === Results-Bereich (nur Liste, KEINE Tabelle im Tab) ===
         Label resultsTitle = new Label("Results");
@@ -5904,6 +5955,303 @@ public class JavaFx extends Application {
     private static double round2(double v) {
         return Math.round(v * 1000.0) / 1000.0;
     }
+
+
+    private final BooleanProperty geoRunning = new SimpleBooleanProperty(false);
+
+
+
+    private void runGeoOptimization() {
+        try {
+            // Datei (wie bei Calculate)
+            var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+            if (file == null) {
+                new Alert(AlertType.INFORMATION, "Please select a file in the dropdown.").showAndWait();
+                return;
+            }
+
+            // Geo target
+            double geoTarget = parseConstExpression(tfGeoTarget.getText(), Double.NaN);
+            if (!Double.isFinite(geoTarget) || geoTarget <= 0) {
+                new Alert(AlertType.INFORMATION, "Please enter a valid Geo target (>0).").showAndWait();
+                return;
+            }
+
+            // Z
+            Double zVal = safeDouble(tfDarkZ.getText());
+            if (zVal == null) {
+                new Alert(AlertType.INFORMATION, "Please enter a valid Z value.").showAndWait();
+                return;
+            }
+            double Z = zVal;
+
+            // Start-Dark-Verteilung aus UI (nur selektierte Elemente, normiert)
+            Map<String, Double> darkWeights = collectDarkWeightsForGeo(1e-3);
+            if (darkWeights.isEmpty()) {
+                new Alert(AlertType.INFORMATION,
+                        "Please enable at least one dark element and enter a value > 0."
+                ).showAndWait();
+                return;
+            }
+
+            // (Optional) Binder wie in runConcCalculation
+            double Emin = 0.0;
+            double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+            double step = parseOrDefault(energieStep, 0.01);
+            String dateiPfad = DATA_FILE;
+
+            Verbindung binder = null;
+            String binderText = (tfDarkBinder.getText() == null ? "" : tfDarkBinder.getText().trim());
+            if (!binderText.isBlank()) {
+                String fracText = (tfDarkBinderFrac == null ? null : tfDarkBinderFrac.getText());
+                if (fracText == null || fracText.trim().isBlank()) {
+                    new Alert(AlertType.INFORMATION,
+                            "Binder is set but no fraction was provided.\n" +
+                                    "Please enter a valid fraction (e.g., 1.04/5.52 or 0.1884)."
+                    ).showAndWait();
+                    return;
+                }
+                double frac = parseBinderFraction(fracText);
+                if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac) || frac > 1.0) {
+                    new Alert(AlertType.INFORMATION,
+                            "Invalid binder fraction.\n" +
+                                    "Allowed formats are like 1.04/5.52 or 0.1884 (must be > 0 and < 1)."
+                    ).showAndWait();
+                    return;
+                }
+                try {
+                    Funktionen fx = new FunktionenImpl();
+                    binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
+                    binder.multipliziereKonzentrationen(frac);
+                } catch (Exception ex) {
+                    new Alert(AlertType.WARNING, "Binder could not be parsed:\n" + ex.getMessage()).showAndWait();
+                    return;
+                }
+            }
+
+            // Damit UI nicht einfriert: Task
+            final Verbindung binderFinal = binder;
+
+
+
+            javafx.concurrent.Task<double[]> task = new javafx.concurrent.Task<>() {
+                @Override
+                protected double[] call() {
+
+                    // 1) Datenzeilen holen (wie runConcCalculation)
+                    var rows = getOrBuildRowsForFile(file);
+                    if (rows == null || rows.isEmpty()) {
+                        throw new RuntimeException("No data rows available.");
+                    }
+
+                    // 2) beste Zeile pro Element bestimmen
+                    java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
+                    for (ConcRow r : rows) {
+                        if (r == null || !r.enabled.get()) continue;
+                        String ele = r.element.get();
+                        if (ele == null || ele.isBlank()) continue;
+
+                        String tr = (r.transition.get() == null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+                        double inten = r.intensity.get();
+                        if (!(inten > 0.0)) continue;
+
+                        ConcRow already = bestByElement.get(ele);
+                        if (already == null) {
+                            bestByElement.put(ele, r);
+                        } else {
+                            boolean newIsK = "K".equals(tr);
+                            boolean oldIsK = "K".equals(already.transition.get());
+                            if (newIsK && !oldIsK) bestByElement.put(ele, r);
+                        }
+                    }
+                    if (bestByElement.isEmpty()) {
+                        throw new RuntimeException("No valid enabled intensities > 0 found.");
+                    }
+
+                    java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
+                    java.util.List<Integer> elementInt = new java.util.ArrayList<>();
+                    java.util.List<String> whichLine = new java.util.ArrayList<>();
+
+                    for (String ele : elementSymbole) {
+                        ConcRow r = bestByElement.get(ele);
+                        whichLine.add(r.transition.get());
+                        elementInt.add((int) Math.round(r.intensity.get()));
+                    }
+
+                    // 3) Parameter (wie runConcCalculation)
+                    String roehreTyp = switch (tubeModel.getValue()) {
+                        case "Love & Scott" -> "lovescott";
+                        default -> "widerschwinger";
+                    };
+                    String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+                    double alpha = parseOrDefault(electronIncidentAngle, 20);
+                    double beta = parseOrDefault(electronTakeoffAngle, 70);
+                    double fensterW = 0.0;
+
+                    double sigma = parseOrDefault(sigmaConst, 1.0314);
+                    double c2cL = parseOrDefault(charZuContL, 1.0);
+                    String rFenstMat = parseOrDefault(windowMaterial, "Be");
+                    double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+                    double raumwinkel = 1.0;
+                    double I_A = parseOrDefault(tubeCurrent, 1.0);
+                    double messzeit = parseOrDefault(measurementTime, 30);
+                    double c2c = parseOrDefault(charZuCont, 1.0);
+
+                    // Detektor
+                    String dFenstMat = parseOrDefault(windowMaterialDet, "Be");
+                    double dFenst_um = parseOrDefault(thicknessWindowDet, 7.62);
+                    double phiDet = 0.0;
+                    String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+                    double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+                    double bedeck = 1.0;
+                    double palpha = 45, pbeta = 45;
+                    String detMat = parseOrDefault(detectorMaterial, "Si");
+                    double tots_um = parseOrDefault(inactiveLayer, 0.05);
+                    double act_mm = parseOrDefault(activeLayer, 3.0);
+
+                    // Filterlisten (wie runConcCalculation)
+                    List<Verbindung> activeTubeFilters = new ArrayList<>();
+                    for (Verbindung v : tubeFilterVerbindungen)
+                        if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+
+                    boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+                    boolean haveMatTube = !activeTubeFilters.isEmpty();
+                    if (!haveMatTube && haveFuncTube) activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+                    if (haveFuncTube) applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+
+                    List<Verbindung> activeDetFilters = new ArrayList<>();
+                    for (Verbindung v : detFilterVerbindungen)
+                        if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+
+                    boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+                    boolean haveMatDet = !activeDetFilters.isEmpty();
+                    if (!haveMatDet && haveFuncDet) activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+                    if (haveFuncDet) applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+
+                    // 4) Dark-Probe bauen (Mess-Elemente + Dark-Elemente mit 0 Intensität)
+                    java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
+                    java.util.List<Integer> darkInts = new java.util.ArrayList<>(elementInt);
+                    for (var e : darkWeights.entrySet()) {
+                        if (!darkElems.contains(e.getKey())) { darkElems.add(e.getKey()); darkInts.add(0); }
+                    }
+
+                    Probe probeDark = new Probe(darkElems, dateiPfad, Emin, Emax, step, darkInts);
+
+                    for (int i = 0; i < darkElems.size(); i++) {
+                        String sym = darkElems.get(i);
+                        int idx = elementSymbole.indexOf(sym);
+                        if (idx >= 0) {
+                            if ("K".equalsIgnoreCase(whichLine.get(idx))) probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                            else probeDark.setzeUebergangAktivFuerElementLAlpha(i);
+                        } else {
+                            probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                        }
+                    }
+
+
+
+                    CalcIDark calcDark = new CalcIDark(
+                            dateiPfad, probeDark, roehreTyp, roehrenMat,
+                            alpha, beta, fensterW,
+                            sigma, c2cL,
+                            rFenstMat, rFenstD_um, raumwinkel, I_A,
+                            Emin, Emax, step, messzeit, c2c,
+                            dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                            detMat, tots_um, act_mm,
+                            activeTubeFilters.isEmpty() ? null : activeTubeFilters,
+                            activeDetFilters.isEmpty() ? null : activeDetFilters,
+                            binderFinal
+                    );
+
+                    // Startverteilung (nur selektierte Dark-Elemente, in UI-Reihenfolge)
+                    double[] startDist = darkWeights.values().stream().mapToDouble(Double::doubleValue).toArray();
+
+                    // >>> NUR: neue Verteilung berechnen (ohne Logs/Outputs)
+                    return calcDark.optimizeLowVerteilungForGeo(geoTarget, Z, startDist);
+                }
+            };
+
+            task.setOnSucceeded(ev -> {
+                double[] bestDist = task.getValue();
+                applyOptimizedDarkDistributionToUI(darkWeights, bestDist);
+                geoRunning.set(false);
+            });
+
+            task.setOnFailed(ev -> {
+                geoRunning.set(false);
+                // optional: Fehler anzeigen
+            });
+
+            geoRunning.set(true);
+
+
+            Thread t = new Thread(task, "geo-opt");
+            t.setDaemon(true);
+            t.start();
+
+        } catch (Exception ex) {
+            new Alert(AlertType.ERROR, "Error:\n" + ex.getMessage()).showAndWait();
+        }
+    }
+
+    private void applyOptimizedDarkDistributionToUI(java.util.Map<String, Double> selectedDarkWeights,
+                                                    double[] bestDist) {
+        if (selectedDarkWeights == null || bestDist == null) return;
+
+        int i = 0;
+        for (String sym : selectedDarkWeights.keySet()) {
+            if (i >= bestDist.length) break;
+
+            int idx = -1;
+            for (int j = 0; j < DARK_ELEMS_ORDER.length; j++) {
+                if (DARK_ELEMS_ORDER[j].equals(sym)) { idx = j; break; }
+            }
+            if (idx < 0) { i++; continue; }
+
+            ToggleButton tb = darkToggles.get(idx);
+            TextField tf = darkFields.get(idx);
+
+            if (tb != null) tb.setSelected(true);
+            if (tf != null) tf.setText(String.format(Locale.US, "%.3f", bestDist[i]));
+
+            i++;
+        }
+    }
+
+
+    private Map<String, Double> collectDarkWeightsForGeo(double eps) {
+        Map<String, Double> map = new LinkedHashMap<>();
+
+        for (int i = 0; i < DARK_ELEMS_ORDER.length; i++) {
+            ToggleButton tb = darkToggles.get(i);
+            TextField tf = darkFields.get(i);
+
+            if (tb == null || tf == null) continue;
+            if (!tb.isSelected()) continue;              // nur selektierte Elemente
+
+            Double v = safeDouble(tf.getText());
+            if (v == null) continue;
+
+            // 0 oder negativ -> eps
+            if (v <= 0.0) v = eps;
+
+            map.put(DARK_ELEMS_ORDER[i], v);
+        }
+
+        // Optional: normalisieren, damit Summe=1 (nur wenn du das als Start wirklich willst)
+        double sum = 0.0;
+        for (double v : map.values()) sum += v;
+        if (sum > 0.0) {
+            for (var e : new ArrayList<>(map.entrySet())) {
+                map.put(e.getKey(), e.getValue() / sum);
+            }
+        }
+
+        return map;
+    }
+
+
+
 
 
 

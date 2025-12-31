@@ -11,7 +11,7 @@ public class KlaudProbe {
     public static void main(String[] args) {
 
 
-        List<String> elementSymboleDark = Arrays.asList( "C", "N", "O", "Si", "Ti");
+        List<String> elementSymboleDark = Arrays.asList( "C", "Na", "O", "Si", "Ti");
         List<Integer> elementIntDark = Arrays.asList(  0, 0, 0, 8785,98652);
 
 
@@ -106,7 +106,22 @@ public class KlaudProbe {
 
         double[] optimum = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
         System.out.println("optimum optimum: " + Arrays.toString(optimum));
-        //calcDark.printOptimizedResult(optimum, darkMatrix, Z);
+        calcDark.printOptimizedResult(optimum, darkMatrix, Z);
+
+
+
+        //double geoTarget = 6.1e-07;
+        double geoTarget = 7e-06;
+        double[] start = new double[]{0.0, 0.0, 1.0};
+
+        double[] bestLowVerteilung = calcDark.optimizeLowVerteilungForGeo(geoTarget, Z, start);
+        System.out.println("bestLowVerteilung: " + Arrays.toString(bestLowVerteilung));
+
+        double[] optParams = calcDark.optimizeHIPPARCHUS(Z, bestLowVerteilung);
+        double geoAchieved = calcDark.computeGeoFactor(optParams, bestLowVerteilung, Z);
+
+        System.out.println("geo achieved: " + geoAchieved);
+        calcDark.printOptimizedResult(optParams, bestLowVerteilung, Z);
 
 
 

@@ -17,6 +17,12 @@ import org.hipparchus.util.Pair;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.*;
 import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
 
+
+import org.hipparchus.optim.*;
+import org.hipparchus.optim.nonlinear.scalar.*;
+import org.hipparchus.optim.nonlinear.scalar.noderiv.*;
+
+
 public class CalcIDark {
 
     private CalcI calcDark;
@@ -835,7 +841,7 @@ public class CalcIDark {
         double f = 0.0; for (double r : residFinal) f += r * r;
         //System.out.printf("[Hipparchus minlm] eval=%d it=%d, f=%.6e%n",
              //   opt.getEvaluations(), opt.getIterations(), f);
-        printOptimizedResult(opt.getPoint().toArray(),lowVerteilung,zMittelwert);
+        //printOptimizedResult(opt.getPoint().toArray(),lowVerteilung,zMittelwert);
 
         return opt.getPoint().toArray(); // reduzierter Vektor (Einfach)
     }
@@ -955,6 +961,153 @@ public class CalcIDark {
 
         return new DarkUIResult(row, gesamtKonz, z_mittel_opt, geo);
     }
+
+
+    private static class KonzResult {
+        final double[] gesamtKonz;
+        final SplitResult z_split;
+        KonzResult(double[] gesamtKonz, SplitResult z_split) {
+            this.gesamtKonz = gesamtKonz;
+            this.z_split = z_split;
+        }
+    }
+
+
+    private KonzResult buildGesamtKonz(double[] optimizedParams,
+                                       double[] lowVerteilung,
+                                       double zMittelwert) {
+
+        double[] lowVerteilungNeu = appendZeros(lowVerteilung, addedDark);
+        double[] optimizedParamsGanz = ergebnisEinfach(optimizedParams);
+
+        List<Integer> zNumbers = this.calcDark.getProbe().getElementZNumbers();
+        int[] zNumbersArr = zNumbers.stream().mapToInt(Integer::intValue).toArray();
+        SplitResult z_split = splitByZ(zNumbersArr, darkI);
+
+        double konzBinder = binderWerte.total();
+        double zBinder    = binderWerte.zAvg();
+
+        double Z_mittelwerte_ohne_Binder =
+                (zMittelwert - konzBinder * zBinder) / (1 - konzBinder);
+
+        double[] alg_angepasst =
+                applyZAnpassen(optimizedParamsGanz, lowVerteilungNeu, Z_mittelwerte_ohne_Binder);
+
+        for (int i = 0; i < alg_angepasst.length; i++) {
+            alg_angepasst[i] *= (1 - konzBinder);
+        }
+
+        double sumParams = 0.0;
+        for (double v : alg_angepasst) sumParams += v;
+        sumParams += konzBinder;
+
+        double[] konz_low = lowKonBeBinderAware(
+                alg_angepasst[0] + konzBinder,
+                lowVerteilungNeu,
+                sumParams
+        );
+
+        double[] konz_high = Arrays.copyOfRange(alg_angepasst, 1, alg_angepasst.length);
+
+        double[] gesamtKonz = new double[z_split.indicesLow.length + z_split.indicesHigh.length];
+        for (int i = 0; i < z_split.indicesLow.length; i++) {
+            gesamtKonz[z_split.indicesLow[i]] = konz_low[i];
+        }
+        for (int i = 0; i < z_split.indicesHigh.length; i++) {
+            gesamtKonz[z_split.indicesHigh[i]] = konz_high[i];
+        }
+
+        return new KonzResult(gesamtKonz, z_split);
+    }
+
+
+    public double computeGeoFactor(double[] optimizedParams,
+                                   double[] lowVerteilung,
+                                   double zMittelwert) {
+
+        KonzResult kr = buildGesamtKonz(optimizedParams, lowVerteilung, zMittelwert);
+
+        double[] berechneteIntensitaet =
+                calcDark.berechneSummenintensitaetMitKonz(kr.gesamtKonz);
+
+        double[] IbHigh = new double[kr.z_split.indicesHigh.length];
+        for (int i = 0; i < kr.z_split.indicesHigh.length; i++) {
+            IbHigh[i] = berechneteIntensitaet[kr.z_split.indicesHigh[i]];
+        }
+
+        return geoIbIg(IbHigh);
+    }
+
+
+    private static double[] toDistributionFromV(double[] v) {
+        double sum = 0.0;
+        for (double vi : v) sum += vi * vi;
+        if (sum == 0.0) {
+            // Fallback: uniform
+            double[] x = new double[v.length];
+            Arrays.fill(x, 1.0 / v.length);
+            return x;
+        }
+        double[] x = new double[v.length];
+        for (int i = 0; i < v.length; i++) {
+            x[i] = (v[i] * v[i]) / sum;
+        }
+        return x;
+    }
+
+
+
+
+    public double[] optimizeLowVerteilungForGeo(double geoTarget,
+                                                double Z,
+                                                double[] lowVerteilungStart) {
+
+        int n = lowVerteilungStart.length;
+
+        // Start-v so wählen, dass v^2 ~ start => v ~ sqrt(start)
+        double[] v0 = new double[n];
+        for (int i = 0; i < n; i++) v0[i] = Math.sqrt(Math.max(0.0, lowVerteilungStart[i]));
+
+        ObjectiveFunction objective = new ObjectiveFunction(v -> {
+            double[] lowVerteilung = toDistributionFromV(v);
+
+            // inneres Optimierungsproblem
+            double[] optimizedParams = optimizeHIPPARCHUS(Z, lowVerteilung);
+
+            // geo aus deinem refactor
+            double geo = computeGeoFactor(optimizedParams, lowVerteilung, Z);
+
+            // skaliert (geo ~ 1e-7): relative Abweichung ist numerisch stabiler
+            double diffRel = (geo - geoTarget) / geoTarget;
+
+
+
+            System.out.printf(Locale.US,
+                    "geo=%.6e (target=%.6e)  diffRel=%.6e  dist=%s%n",
+                    geo, geoTarget, diffRel, Arrays.toString(lowVerteilung)
+            );
+
+            return diffRel * diffRel;
+        });
+
+        SimplexOptimizer opt = new SimplexOptimizer(1e-10, 1e-10);
+        NelderMeadSimplex simplex = new NelderMeadSimplex(n, 0.2);
+
+        PointValuePair res = opt.optimize(
+                new MaxEval(200),              // outer evals (innen ist teuer)
+                objective,
+                GoalType.MINIMIZE,
+                new InitialGuess(v0),
+                simplex
+        );
+
+        return toDistributionFromV(res.getPoint());
+    }
+
+
+
+
+
 
 
 

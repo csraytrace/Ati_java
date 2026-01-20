@@ -347,7 +347,7 @@ public class JavaFx extends Application {
         tubeMaterial = new TextField(); tubeMaterial.setPrefColumnCount(breite);
         Label ElectronIncidentAngleLabel = new Label("α: Electron Incident Angle [°]");
         electronIncidentAngle = new TextField(); electronIncidentAngle.setPrefColumnCount(breite);
-        Label lblElectronTakeoffAngle = new Label("Electron Takeoff Angle [°]:");
+        Label lblElectronTakeoffAngle = new Label("Photon Takeoff Angle [°]:");
         electronTakeoffAngle = new TextField(); electronTakeoffAngle.setPrefColumnCount(breite);
         Label lblCharZuCont = new Label("char→cont ratio:");
         charZuCont = new TextField(); charZuCont.setPrefColumnCount(breite);
@@ -3476,14 +3476,25 @@ public class JavaFx extends Application {
         HBox rowGeo = new HBox(10, lblGeo, tfGeoTarget, btnOptGeo);
         rowGeo.setAlignment(Pos.CENTER_LEFT);
 
-
-        // --- Berechnen ---
         Button btnCalc = new Button("Calculate");
-        btnCalc.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
+
+
+
+
+
         btnCalc.setOnAction(e -> {
             currentLayerType = LayerType.DICKSCHICHT;
-            runConcCalculation();
+            runConcCalculationAsync();
         });
+
+
+        btnCalc.disableProperty().bind(
+                Bindings.isNull(concFileCombo.valueProperty())
+                        .or(calcRunning)
+                        .or(geoRunning)
+        );
+
+
 
         Button btnCalcThin = new Button("Calculate (Thin Layer)");
         btnCalcThin.disableProperty().bind(Bindings.isNull(concFileCombo.valueProperty()));
@@ -5614,6 +5625,13 @@ public class JavaFx extends Application {
 
         sb.append("\\begin{table}[h]\n\\centering\n");
 
+        sb.append("% DEBUG copyTableToClipboardAsLaTeXTransposed\n");
+        sb.append("% DEBUG cols.size=").append(cols.size()).append("\n");
+        sb.append("% DEBUG col0='").append(cols.get(0).getText()).append("'\n");
+        sb.append("% DEBUG col1='").append(cols.size()>1?cols.get(1).getText():"").append("'\n");
+        sb.append("% DEBUG col2='").append(cols.size()>2?cols.get(2).getText():"").append("'\n");
+
+
 
         sb.append("\\begin{tabular}{");
         for (int i = 0; i < cols.size(); i++) sb.append(i==0 ? 'l' : 'r');
@@ -5663,26 +5681,45 @@ public class JavaFx extends Application {
 
     private static String formatLatexCell(Object v, String key) {
         if (v == null) return "";
+
         if (v instanceof Number n) {
+
+            // Spezialfall: Geo
             if ("Geo".equalsIgnoreCase(key)) {
                 double d = n.doubleValue();
                 if (!Double.isFinite(d) || d == 0.0) return "0";
-                // 1 Dezimalstelle in wissenschaftlicher Notation
-                String s = String.format(java.util.Locale.ROOT, "%.1e", d); // z.B. "7.1e-07"
+
+                String s = String.format(java.util.Locale.ROOT, "%.1e", d);
                 int i = s.indexOf('e');
                 String mant = s.substring(0, i);
-                String exp  = s.substring(i + 1); // "+06", "-07", "0"
-                // Exponent: führendes '+' weg, führende 0en weg, "-" behalten
-                exp = exp.replaceFirst("^\\+?", "").replaceFirst("^(-?)0+", "$1");
+                String exp  = s.substring(i + 1);
+
+                exp = exp.replaceFirst("^\\+?", "")
+                        .replaceFirst("^(-?)0+", "$1");
                 if (exp.isEmpty() || "-".equals(exp)) exp = "0";
-                return mant + "e" + exp; // -> "7.1e-7"
-            } else {
-                // Elemente (und Z, falls numerisch) mit 3 Nachkommastellen
-                return String.format(java.util.Locale.ROOT, "%.3f", n.doubleValue());
+
+                return mant + "e" + exp;
             }
+
+            // Element-Spalten: Prozentzeichen anhängen, KEINE Skalierung
+            boolean isElement =
+                    key != null
+                            && key.matches("^[A-Z][a-z]?$")
+                            && !"Z".equals(key);
+
+            if (isElement) {
+                return String.format(java.util.Locale.ROOT, "%.3f\\%%",
+                        n.doubleValue());
+            }
+
+            // Z, \overline{Z}, Summen, sonstige numerische Werte
+            return String.format(java.util.Locale.ROOT, "%.3f", n.doubleValue());
         }
+
         return escapeLatex(String.valueOf(v));
     }
+
+
 
 
 
@@ -5752,22 +5789,7 @@ public class JavaFx extends Application {
         List<TableColumn<Map<String,Object>, ?>> cols = new ArrayList<>(table.getColumns());
         if (cols.isEmpty()) return;
 
-        // 1) "Normale" Matrix vorbereiten
-        List<List<String>> normal = new ArrayList<>();
-
-        // Header (mit Z -> \overline{Z})
-        List<String> header = new ArrayList<>();
-        for (TableColumn<Map<String,Object>, ?> c : cols) {
-            String head = c.getText();
-            if ("Z".equals(head)) {
-                header.add("$\\overline{Z}$");   // nicht escapen
-            } else {
-                header.add(escapeLatex(head));
-            }
-        }
-        normal.add(header);
-
-        // *** NEU: Zeilenreihenfolge wie vorher: erst ohne Geo, dann mit Geo ***
+        // --- Zeilenreihenfolge: erst ohne Geo, dann mit Geo ---
         List<Map<String,Object>> allRows = new ArrayList<>(table.getItems());
         List<Map<String,Object>> noGeo   = new ArrayList<>();
         List<Map<String,Object>> withGeo = new ArrayList<>();
@@ -5779,13 +5801,28 @@ public class JavaFx extends Application {
         List<Map<String,Object>> orderedRows = new ArrayList<>(noGeo);
         orderedRows.addAll(withGeo);
 
-        // Daten-Zeilen in gewünschter Reihenfolge
+        // --- NEU: Wenn Zeilen "Known" + genau 1 Output vorhanden -> Ratio-Zeile einfügen ---
+        insertRatioRowIfApplicable(orderedRows, cols);
+
+        // 1) "Normale" Matrix vorbereiten
+        List<List<String>> normal = new ArrayList<>();
+
+        // Header (mit Z -> \overline{Z})
+        List<String> header = new ArrayList<>();
+        for (TableColumn<Map<String,Object>, ?> c : cols) {
+            String head = c.getText();
+            if ("Z".equals(head)) header.add("$\\overline{Z}$");
+            else                  header.add(escapeLatex(head));
+        }
+        normal.add(header);
+
+        // Daten-Zeilen
         for (Map<String,Object> row : orderedRows) {
             List<String> line = new ArrayList<>();
             for (TableColumn<Map<String,Object>, ?> c : cols) {
                 String key = c.getText();
                 Object v = row.get(key);
-                line.add(formatLatexCellOrDash(v, key));   // inkl. Geo=7.1e-7, 3 Nachkommastellen
+                line.add(formatLatexCellOrDash(v, key));
             }
             normal.add(line);
         }
@@ -5800,19 +5837,28 @@ public class JavaFx extends Application {
             transposed.add(newRow);
         }
 
+        if (transposed.size() > 0 && transposed.get(0).size() >= 4) {
+            List<String> h = transposed.get(0);
+            h.set(1, "Known");
+            h.set(2, "Calculated");
+            h.set(3, "$\\dfrac{\\mathrm{Calculated}}{\\mathrm{Known}}$");
+        }
+
         // 3) LaTeX ausgeben
-        String labelSafe = baseName.replaceAll("[^A-Za-z0-9]+", "-").toLowerCase(java.util.Locale.ROOT);
+        String labelSafe = baseName.replaceAll("[^A-Za-z0-9]+", "-")
+                .toLowerCase(java.util.Locale.ROOT);
+
         StringBuilder sb = new StringBuilder();
         sb.append("\\begin{table}[h]\n\\centering\n");
 
         sb.append("\\begin{tabular}{");
-        for (int i = 0; i < transposed.get(0).size(); i++) sb.append(i==0 ? 'l' : 'r');
+        for (int i = 0; i < transposed.get(0).size(); i++) sb.append(i == 0 ? 'l' : 'r');
         sb.append("}\n\\toprule\n");
 
         // Kopf (transponiert)
         for (int i = 0; i < transposed.get(0).size(); i++) {
             sb.append(transposed.get(0).get(i));
-            sb.append(i < transposed.get(0).size()-1 ? " & " : " \\\\\n");
+            sb.append(i < transposed.get(0).size() - 1 ? " & " : " \\\\\n");
         }
         sb.append("\\midrule\n");
 
@@ -5821,7 +5867,7 @@ public class JavaFx extends Application {
             List<String> row = transposed.get(r);
             for (int i = 0; i < row.size(); i++) {
                 sb.append(row.get(i));
-                sb.append(i < row.size()-1 ? " & " : " \\\\\n");
+                sb.append(i < row.size() - 1 ? " & " : " \\\\\n");
             }
         }
 
@@ -5849,6 +5895,93 @@ public class JavaFx extends Application {
     private static String formatLatexCellOrDash(Object v, String key) {
         return isEmptyCell(v) ? "-" : formatLatexCell(v, key);
     }
+
+    private static void insertRatioRowIfApplicable(
+            List<Map<String,Object>> orderedRows,
+            List<TableColumn<Map<String,Object>, ?>> cols) {
+
+        if (cols.isEmpty()) return;
+
+        String nameKey = cols.get(0).getText();  // KEY exakt übernehmen
+
+        Map<String,Object> knownRow = null;
+        List<Map<String,Object>> outputRows = new ArrayList<>();
+
+        for (Map<String,Object> row : orderedRows) {
+            Object nameObj = row.get(nameKey);
+            String name = nameObj == null ? "" : nameObj.toString().trim();
+
+            if ("Known".equalsIgnoreCase(name)) {
+                knownRow = row;
+                continue;
+            }
+
+            if (!name.isEmpty()
+                    && !"Z".equalsIgnoreCase(name)
+                    && !"Geo".equalsIgnoreCase(name)
+                    && !name.matches("^[A-Z][a-z]?$")) {
+                outputRows.add(row);
+            }
+        }
+
+        if (knownRow == null || outputRows.size() != 1) return;
+
+        Map<String,Object> outRow = outputRows.get(0);
+
+        Map<String,Object> ratioRow = new java.util.LinkedHashMap<>();
+        ratioRow.put(nameKey, "Difference"); // <-- hier beliebig benennen
+
+        for (TableColumn<Map<String,Object>, ?> c : cols) {
+            String key = c.getText();
+
+            if (key.equalsIgnoreCase(nameKey) || "Z".equalsIgnoreCase(key) || "Geo".equalsIgnoreCase(key)) {
+                ratioRow.put(key, null);
+                continue;
+            }
+
+            if (!key.matches("^[A-Z][a-z]?$")) {
+                ratioRow.put(key, null);
+                continue;
+            }
+
+            Double k = toDoubleOrNull(knownRow.get(key));
+            Double o = toDoubleOrNull(outRow.get(key));
+
+            if (k == null || o == null || k == 0.0 || !Double.isFinite(k) || !Double.isFinite(o)) {
+                ratioRow.put(key, null);
+            } else {
+                ratioRow.put(key, o / k);
+            }
+        }
+
+        int idx = orderedRows.indexOf(outRow);
+        if (idx >= 0) orderedRows.add(idx + 1, ratioRow);
+        else orderedRows.add(ratioRow);
+    }
+
+
+
+    private static Double toDoubleOrNull(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.doubleValue();
+        try {
+            String s = v.toString().trim()
+                    .replace("\\%", "")
+                    .replace("%", "");
+            if (s.isEmpty() || "-".equals(s)) return null;
+            return Double.parseDouble(s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+
+
+
+
+
+
+
 
 
 
@@ -6249,6 +6382,371 @@ public class JavaFx extends Application {
 
         return map;
     }
+
+
+
+    private final javafx.beans.property.BooleanProperty calcRunning =
+            new javafx.beans.property.SimpleBooleanProperty(false);
+
+
+
+    private static final class ConcCalcPayload {
+        final String base;
+        final java.util.Map<String, Object> row;
+        final java.util.Map<String, Double> darkWeights; // null wenn normal
+        final Verbindung binder;                         // null wenn normal
+        final boolean isDark;
+
+        ConcCalcPayload(String base,
+                        java.util.Map<String, Object> row,
+                        boolean isDark,
+                        java.util.Map<String, Double> darkWeights,
+                        Verbindung binder) {
+            this.base = base;
+            this.row = row;
+            this.isDark = isDark;
+            this.darkWeights = darkWeights;
+            this.binder = binder;
+        }
+    }
+
+
+
+    private void applyConcPayloadToUI(ConcCalcPayload p) {
+        if (p == null || p.row == null) return;
+
+        String base = p.base;
+        var list = listForBase(base);
+
+        // Spalten sicherstellen
+        ensureElementColumns(
+                p.row.keySet().stream()
+                        .filter(k -> k.matches("[A-Z][a-z]?"))
+                        .toList()
+        );
+
+        // Dark/Binder-Spalten in dieser Basis auffüllen (nur falls Dark)
+        if (p.isDark) {
+            addMissingDarkColumnsForBase(base, p.row, p.darkWeights, p.binder);
+        }
+
+        // Erste Zeile = Basis (ohne Suffix)
+        if (list.isEmpty()) {
+            p.row.put("Name", base);
+            list.add(p.row);
+        } else {
+            var target = new java.util.LinkedHashMap<String, Object>(p.row);
+            target.put("Name", nextUniqueName(base));
+            list.add(target);
+        }
+
+        // Basenliste aktualisieren
+        if (!concBaseNames.contains(base)) concBaseNames.add(base);
+
+        // UI refresh
+        if (concResultsListView != null) {
+            concResultsListView.refresh();
+            concResultsListView.getSelectionModel().select(base);
+            concResultsListView.scrollTo(base);
+        }
+    }
+
+
+    private void runConcCalculationAsync() {
+        try {
+            // 0) Datei (UI-Thread)
+            var file = (concFileCombo == null) ? null : concFileCombo.getValue();
+            if (file == null) {
+                new Alert(Alert.AlertType.INFORMATION, "Please select a file in the dropdown.").showAndWait();
+                return;
+            }
+
+            // Base + uniqueName NUR im UI-Thread erzeugen (wegen nextUniqueName/base lists)
+            final String baseLabel = stripExt(file.getFileName().toString());
+            final String uniqueName = nextUniqueName(baseLabel);
+
+            // Dark-Flag + Dark Inputs im UI-Thread lesen/validieren
+            final boolean useDark = (chkUseDark != null && chkUseDark.isSelected());
+
+            // WICHTIG: Binder/DarkWeights im UI-Thread parsen (damit Alerts ok sind)
+            final double Emin = 0.0;
+            final double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+            final double step = parseOrDefault(energieStep, 0.01);
+            final String dateiPfad = DATA_FILE;
+
+            final Double zVal = useDark ? safeDouble(tfDarkZ.getText()) : null;
+            if (useDark && zVal == null) {
+                new Alert(Alert.AlertType.INFORMATION, "Please enter a valid Z value.").showAndWait();
+                return;
+            }
+            final double Z = useDark ? zVal : Double.NaN;
+
+            final java.util.Map<String, Double> darkWeights =
+                    useDark ? collectDarkWeightsFromUI() : null;
+
+            if (useDark && (darkWeights == null || darkWeights.isEmpty())) {
+                new Alert(Alert.AlertType.INFORMATION,
+                        "Please enable at least one dark element and enter a value > 0."
+                ).showAndWait();
+                return;
+            }
+
+            Verbindung binder = null;
+            if (useDark) {
+                String binderText = (tfDarkBinder.getText() == null ? "" : tfDarkBinder.getText().trim());
+                if (!binderText.isBlank()) {
+                    String fracText = tfDarkBinderFrac.getText();
+                    if (fracText == null || fracText.trim().isBlank()) {
+                        new Alert(Alert.AlertType.INFORMATION,
+                                "Binder is set but no fraction was provided.\n" +
+                                        "Please enter a valid fraction (e.g., 1.04/5.52 or 0.1884)."
+                        ).showAndWait();
+                        return;
+                    }
+                    double frac = parseBinderFraction(fracText);
+                    if (!(frac > 0.0) || Double.isNaN(frac) || Double.isInfinite(frac) || frac > 1.0) {
+                        new Alert(Alert.AlertType.INFORMATION,
+                                "Invalid binder fraction.\n" +
+                                        "Allowed formats are like 1.04/5.52 or 0.1884 (must be > 0 and < 1)."
+                        ).showAndWait();
+                        return;
+                    }
+                    try {
+                        Funktionen fx = new FunktionenImpl();
+                        binder = fx.parseVerbindung(binderText, Emin, Emax, step, dateiPfad);
+                        binder.multipliziereKonzentrationen(frac);
+                    } catch (Exception ex) {
+                        new Alert(Alert.AlertType.WARNING, "Binder could not be parsed:\n" + ex.getMessage()).showAndWait();
+                        return;
+                    }
+                }
+            }
+            final Verbindung binderFinal = binder;
+
+            // Ab hier: Task starten
+            calcRunning.set(true);
+
+            javafx.concurrent.Task<ConcCalcPayload> task = new javafx.concurrent.Task<>() {
+                @Override
+                protected ConcCalcPayload call() {
+                    // 1) Zeilen holen
+                    var rows = getOrBuildRowsForFile(file);
+                    if (rows == null || rows.isEmpty()) {
+                        throw new RuntimeException("No data rows available.");
+                    }
+
+                    // 2) bestByElement wie bisher (aus deiner runConcCalculation) :contentReference[oaicite:6]{index=6}
+                    java.util.Map<String, ConcRow> bestByElement = new java.util.LinkedHashMap<>();
+                    for (ConcRow r : rows) {
+                        if (r == null || !r.enabled.get()) continue;
+                        String ele = r.element.get();
+                        if (ele == null || ele.isBlank()) continue;
+
+                        String tr = (r.transition.get() == null ? "" : r.transition.get().trim().toUpperCase(java.util.Locale.ROOT));
+                        double inten = r.intensity.get();
+                        if (!(inten > 0.0)) continue;
+
+                        ConcRow already = bestByElement.get(ele);
+                        if (already == null) {
+                            bestByElement.put(ele, r);
+                        } else {
+                            boolean newIsK = "K".equals(tr);
+                            boolean oldIsK = "K".equals(already.transition.get());
+                            if (newIsK && !oldIsK) bestByElement.put(ele, r);
+                        }
+                    }
+                    if (bestByElement.isEmpty()) {
+                        throw new RuntimeException("No valid enabled intensities > 0 found.");
+                    }
+
+                    java.util.List<String> elementSymbole = new java.util.ArrayList<>(bestByElement.keySet());
+                    java.util.List<Integer> elementInt    = new java.util.ArrayList<>();
+                    java.util.List<String>  whichLine     = new java.util.ArrayList<>();
+                    for (String ele : elementSymbole) {
+                        ConcRow r = bestByElement.get(ele);
+                        whichLine.add(r.transition.get());
+                        elementInt.add((int) Math.round(r.intensity.get()));
+                    }
+
+                    // 3) UI-Parameter (wie bisher) – du hast das bereits in runConcCalculation
+                    String roehreTyp = switch (tubeModel.getValue()) {
+                        case "Love & Scott" -> "lovescott";
+                        default -> "widerschwinger";
+                    };
+                    String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+                    double alpha      = parseOrDefault(electronIncidentAngle, 20);
+                    double beta       = parseOrDefault(electronTakeoffAngle, 70);
+                    double fensterW   = 0.0;
+
+                    double sigma      = parseOrDefault(sigmaConst, 1.0314);
+                    double c2cL       = parseOrDefault(charZuContL, 1.0);
+                    String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+                    double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+                    double raumwinkel = 1.0;
+                    double I_A        = parseOrDefault(tubeCurrent, 1.0);
+                    double messzeit   = parseOrDefault(measurementTime, 30);
+                    double c2c        = parseOrDefault(charZuCont, 1.0);
+
+                    // Detektor
+                    String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+                    double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+                    double phiDet     = 0.0;
+                    String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+                    double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+                    double bedeck     = 1.0;
+                    double palpha     = 45, pbeta = 45;
+                    String detMat     = parseOrDefault(detectorMaterial, "Si");
+                    double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+                    double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+                    // Filterlisten (wie in deinem runConcCalculation)
+                    java.util.List<Verbindung> activeTubeFilters = new java.util.ArrayList<>();
+                    for (Verbindung v : tubeFilterVerbindungen)
+                        if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) activeTubeFilters.add(v);
+
+                    boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+                    boolean haveMatTube  = !activeTubeFilters.isEmpty();
+                    if (!haveMatTube && haveFuncTube) activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+                    if (haveFuncTube) applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+
+                    java.util.List<Verbindung> activeDetFilters = new java.util.ArrayList<>();
+                    for (Verbindung v : detFilterVerbindungen)
+                        if (detFilterUse.getOrDefault(v, Boolean.TRUE)) activeDetFilters.add(v);
+
+                    boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+                    boolean haveMatDet  = !activeDetFilters.isEmpty();
+                    if (!haveMatDet && haveFuncDet) activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+                    if (haveFuncDet) applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+
+                    // 4) Compute: DARK oder NORMAL
+                    if (useDark) {
+                        // Dark-Probe bauen
+                        java.util.List<String> darkElems = new java.util.ArrayList<>(elementSymbole);
+                        java.util.List<Integer> darkInts = new java.util.ArrayList<>(elementInt);
+                        for (var e : darkWeights.entrySet()) {
+                            if (!darkElems.contains(e.getKey())) { darkElems.add(e.getKey()); darkInts.add(0); }
+                        }
+
+                        Probe probeDark = new Probe(darkElems, dateiPfad, Emin, Emax, step, darkInts);
+                        for (int i = 0; i < darkElems.size(); i++) {
+                            String sym = darkElems.get(i);
+                            int idx = elementSymbole.indexOf(sym);
+                            if (idx >= 0) {
+                                if ("K".equalsIgnoreCase(whichLine.get(idx))) probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                                else probeDark.setzeUebergangAktivFuerElementLAlpha(i);
+                            } else {
+                                probeDark.setzeUebergangAktivFuerElementKAlpha(i);
+                            }
+                        }
+
+                        CalcIDark calcDark = new CalcIDark(
+                                dateiPfad, probeDark, roehreTyp, roehrenMat,
+                                alpha, beta, fensterW,
+                                sigma, c2cL,
+                                rFenstMat, rFenstD_um, raumwinkel, I_A,
+                                Emin, Emax, step, messzeit, c2c,
+                                dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                                detMat, tots_um, act_mm,
+                                activeTubeFilters.isEmpty() ? null : activeTubeFilters,
+                                activeDetFilters.isEmpty()  ? null : activeDetFilters,
+                                binderFinal
+                        );
+
+                        double[] darkMatrix = darkWeights.values().stream().mapToDouble(Double::doubleValue).toArray();
+                        double[] optimizedParams = calcDark.optimizeHIPPARCHUS(Z, darkMatrix);
+
+                        CalcIDark.DarkUIResult res = calcDark.computeOptimizedResultForUI(
+                                uniqueName, optimizedParams, darkMatrix, Z
+                        );
+
+                        // (optional) runden wie bei dir
+                        res.row.replaceAll((k, v) -> {
+                            if (v instanceof Number && !"Name".equals(k) && !"Geo".equals(k)) {
+                                return round2(((Number) v).doubleValue());
+                            }
+                            return v;
+                        });
+
+                        return new ConcCalcPayload(baseLabel, res.row, true, darkWeights, binderFinal);
+
+                    } else {
+                        // NORMAL
+                        Probe probe = new Probe(elementSymbole, dateiPfad, Emin, Emax, step, elementInt);
+                        for (int i = 0; i < elementSymbole.size(); i++) {
+                            if ("K".equalsIgnoreCase(whichLine.get(i))) probe.setzeUebergangAktivFuerElementKAlpha(i);
+                            else probe.setzeUebergangAktivFuerElementLAlpha(i);
+                        }
+
+                        CalcI calc = new CalcI(
+                                dateiPfad, probe, roehreTyp, roehrenMat,
+                                alpha, beta, fensterW,
+                                sigma, c2cL,
+                                rFenstMat, rFenstD_um, raumwinkel, I_A,
+                                Emin, Emax, step, messzeit, c2c,
+                                dFenstMat, dFenst_um, phiDet, kontaktMat, kontakt_nm, bedeck, palpha, pbeta,
+                                detMat, tots_um, act_mm,
+                                activeTubeFilters, activeDetFilters
+                        );
+
+                        PreparedValues pv = calc.werteVorbereitenAlle();
+                        double[] relKonz = calc.berechneRelKonzentrationen(calc, pv, 10000); // [%]
+
+                        // Z̄
+                        java.util.List<Integer> zNumsList = probe.getElementZNumbers();
+                        int[] zNums = zNumsList.stream().mapToInt(Integer::intValue).toArray();
+                        double sumK = 0.0, sumZK = 0.0;
+                        for (int i = 0; i < relKonz.length && i < zNums.length; i++) {
+                            sumK += relKonz[i];
+                            sumZK += relKonz[i] * zNums[i];
+                        }
+                        double zMean = (sumK > 0) ? (sumZK / sumK) : Double.NaN;
+
+                        // Geo
+                        double[] berechInt = calc.berechneSummenintensitaetMitKonz(relKonz);
+                        double[] origKonz = calc.konzentration;
+                        if (origKonz == null || origKonz.length != relKonz.length) {
+                            origKonz = java.util.Arrays.stream(relKonz).map(v -> v / 100.0).toArray();
+                        }
+                        double[] geoArr = calc.geometriefaktor(origKonz, berechInt);
+                        double geoMean = java.util.Arrays.stream(geoArr).average().orElse(Double.NaN);
+
+                        // Row bauen
+                        java.util.Map<String,Object> rowOut = new java.util.LinkedHashMap<>();
+                        rowOut.put("Name", uniqueName);
+                        for (int i = 0; i < elementSymbole.size() && i < relKonz.length; i++) {
+                            rowOut.put(elementSymbole.get(i), round2(relKonz[i]));
+                        }
+                        rowOut.put("Z", round2(zMean));
+                        rowOut.put("Geo", geoMean);
+
+                        return new ConcCalcPayload(baseLabel, rowOut, false, null, null);
+                    }
+                }
+            };
+
+            task.setOnSucceeded(ev -> {
+                calcRunning.set(false);
+                applyConcPayloadToUI(task.getValue());
+            });
+            task.setOnFailed(ev -> {
+                calcRunning.set(false);
+                Throwable ex = task.getException();
+                new Alert(Alert.AlertType.ERROR,
+                        "Calculation failed:\n" + (ex == null ? "Unknown error" : ex.getMessage())
+                ).showAndWait();
+            });
+
+            new Thread(task, "calc-concentration").start();
+
+        } catch (Exception ex) {
+            calcRunning.set(false);
+            new Alert(Alert.AlertType.ERROR, "Calculation error:\n" + ex.getMessage()).showAndWait();
+        }
+    }
+
+
+
+
 
 
 

@@ -830,7 +830,8 @@ public class CalcIDark {
                 .model(model)
                 .maxEvaluations(2000)
                 .maxIterations(2000)
-                .checkerPair(new SimpleVectorValueChecker(1e-10, 1e-10))
+                //.checkerPair(new SimpleVectorValueChecker(1e-10, 1e-10))
+                .checkerPair(new SimpleVectorValueChecker(1e-6, 1e-6))
                 .build();
 
         LeastSquaresOptimizer optimizer = new LevenbergMarquardtOptimizer();
@@ -1090,7 +1091,7 @@ public class CalcIDark {
             return diffRel * diffRel;
         });
 
-        SimplexOptimizer opt = new SimplexOptimizer(1e-10, 1e-10);
+        SimplexOptimizer opt = new SimplexOptimizer(1e-6, 1e-6);
         NelderMeadSimplex simplex = new NelderMeadSimplex(n, 0.2);
 
         PointValuePair res = opt.optimize(

@@ -16,7 +16,7 @@ public class VerbindungTest {
         double Emax = 30;
         double step = 0.01;
         //String ver1 = "2 HO + 0.5 HeO + 0.5 HeO";
-        String ver1 = "C10H8O4";
+        String ver1 = "C6H12O6";
         //String ver2 = "0.844 C10H8O4 + 0.156 TiO2";
         String ver2 = "15.57 TiO2 + 84.43 C10H8O4";
 

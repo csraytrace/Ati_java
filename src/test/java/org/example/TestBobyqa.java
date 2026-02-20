@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.example.KalibrierungFunktion.mittelGeo;
+
 public class TestBobyqa {
     public static void main(String[] args) {
 
@@ -80,7 +82,7 @@ public class TestBobyqa {
 
         //double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
         double[] startwerte = {0.8, 15, 2, 0.1, 0.1, 1.1, 25};
-        String para="Emin=0.05, Emax=40,step=0.05";
+        String para="Emin=0.05, Emax=40,step=0.05, messzeit=220";
         //"sigma=0.8, raumwinkel=0.9, Einfallswinkelalpha=8, Einfallswinkelbeta=70"
 
 
@@ -121,6 +123,7 @@ public class TestBobyqa {
             System.out.println(geo[i]);
         }
         System.out.println(Kalibrierung.mittlereAbweichung(geo));
+        System.out.println(mittelGeo(geo));
 
 
 

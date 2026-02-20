@@ -52,12 +52,12 @@ public class test {
          */
         double Emin = 0;
         double Emax = 35;
-        double step = 5;
+        double step = 0.05;
 
         Funktionen f = new FunktionenImpl();
 
         Verbindung v1 = f.parseVerbindung("Cu1",Emin, Emax, step, "McMaster.txt");
-        v1.setFensterDickeCm(0.001);
+        v1.setFensterDickeCm(0.00);
         List<Verbindung> fil = new ArrayList<>();
         fil.add(v1);
 
@@ -253,6 +253,10 @@ public class test {
 
         for (int i = 0; i < relKonz.length; i++) {
             System.out.println(berechInt[i]);;
+        }
+
+        for (int i = 0; i < geo.length; i++) {
+            System.out.println(geo[i]);;
         }
 
 

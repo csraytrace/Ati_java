@@ -4,43 +4,134 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class TracorSpektrum {
 
+    private static final int SIZE_LONG  = 8424;
+    private static final int SIZE_MID   = 4328;
+    private static final int SIZE_SHORT = 2280;
+
     // -------------------------
-    // Public API (ähnlich Python)
+    // Öffentliche Hilfsmethoden
+    // -------------------------
+
+    public static boolean hasNumericExtension(Path path) {
+        if (path == null || path.getFileName() == null) return false;
+
+        String name = path.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot == name.length() - 1) return false;
+
+        String ext = name.substring(dot + 1);
+        for (int i = 0; i < ext.length(); i++) {
+            if (!Character.isDigit(ext.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static boolean isLikelyTracorFile(Path path) {
+        if (path == null || !Files.isRegularFile(path)) return false;
+
+        try {
+            long size = Files.size(path);
+            return size == SIZE_LONG || size == SIZE_MID || size == SIZE_SHORT;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    public static boolean isTracorCandidate(Path path) {
+        return hasNumericExtension(path) && isLikelyTracorFile(path);
+    }
+
+    /**
+     * Konvertiert ein Tracor-File in eine .spe-Datei im selben Ordner.
+     * Zielname: originaler Dateiname + ".spe"
+     */
+    public static Path convertToSpeBesideSource(Path inputPath, boolean info, boolean overwrite) throws IOException {
+        if (inputPath == null) {
+            throw new IllegalArgumentException("inputPath ist null");
+        }
+
+        if (!Files.exists(inputPath)) {
+            throw new FileNotFoundException("Datei nicht gefunden: " + inputPath);
+        }
+
+        if (!isTracorCandidate(inputPath)) {
+            throw new IllegalArgumentException("Kein erkanntes Tracor-File: " + inputPath);
+        }
+
+        // Erst Tracor-Datei lesen, damit wir den internen Namen kennen
+        Result res = tracorDatenToSpe(inputPath.toString(), info, false, null);
+
+        String rawName = res.name != null ? res.name.trim() : "";
+        if (rawName.isEmpty()) {
+            throw new IOException("Tracor-Datei enthält keinen gültigen Namen im Header.");
+        }
+
+        // Dateinamen etwas absichern
+        String safeName = rawName.replaceAll("[\\\\/:*?\"<>|]", "_");
+
+        Path outPath = inputPath.resolveSibling(safeName + ".SPE");
+
+        if (Files.exists(outPath) && !overwrite) {
+            return outPath;
+        }
+
+        writeSpeFile(
+                outPath.toString(),
+                res.name,
+                res.measTimeSec,
+                res.voltageKv,
+                res.currentmA,
+                res.filter,
+                res.lv,
+                res.ySpec,
+                res.xValues
+        );
+
+        return outPath;
+    }
+
+    // -------------------------
+    // Public API (bestehend)
     // -------------------------
     public static Result tracorDatenToSpe(String filePath, boolean info, boolean saveSpe, String outDirOrPrefix) throws IOException {
         byte[] content = readFile(filePath);
 
-        // 1) Spektrum extrahieren je nach Dateigröße
         int[] ySpec;
         double[] xValues;
 
-        if (content.length == 8424) {
+        if (content.length == SIZE_LONG) {
             IntDoublePair pair = convertToInt(content, 184, 8376);
             ySpec = pair.ints;
             xValues = pair.xs;
-        } else if (content.length == 4328) {
+        } else if (content.length == SIZE_MID) {
             IntDoublePair pair = convertToInt(content, 184, 4280);
             ySpec = pair.ints;
             xValues = pair.xs;
-        } else if (content.length == 2280) {
+        } else if (content.length == SIZE_SHORT) {
             IntDoublePair pair = convertToInt(content, 184, 2232);
             ySpec = pair.ints;
             xValues = pair.xs;
         } else {
-            throw new IllegalArgumentException("Unerwartete Dateigröße: " + content.length + " bytes (erwartet: 8424, 4328, 2280)");
+            throw new IllegalArgumentException(
+                    "Unerwartete Dateigröße: " + content.length + " bytes (erwartet: 8424, 4328, 2280)"
+            );
         }
 
-        // 2) Header-Infos (exakt gleiche Offsets wie Python)
         int measTimeSec = convertToUShort(content, content.length - 30, content.length - 28).get(0);
-        int voltageKv    = convertToUShort(content, content.length - 48, content.length - 46).get(0);
-        int currentRaw   = convertToUShort(content, content.length - 46, content.length - 44).get(0); // *1e-2 mA
+        int voltageKv   = convertToUShort(content, content.length - 48, content.length - 46).get(0);
+        int currentRaw  = convertToUShort(content, content.length - 46, content.length - 44).get(0);
         double currentmA = currentRaw * 1e-2;
 
         String name   = convertToCharFiltered(content, 22, 35);
@@ -53,6 +144,9 @@ public class TracorSpektrum {
         }
 
         if (saveSpe) {
+            if (outDirOrPrefix == null) {
+                throw new IllegalArgumentException("outDirOrPrefix darf bei saveSpe=true nicht null sein");
+            }
             String outPath = outDirOrPrefix + name + ".spe";
             writeSpeFile(outPath, name, measTimeSec, voltageKv, currentmA, filter, lv, ySpec, xValues);
         }
@@ -60,9 +154,6 @@ public class TracorSpektrum {
         return new Result(ySpec, xValues, name, measTimeSec, voltageKv, currentmA, filter, lv);
     }
 
-    // -------------------------
-    // Result DTO
-    // -------------------------
     public static class Result {
         public final int[] ySpec;
         public final double[] xValues;
@@ -87,21 +178,12 @@ public class TracorSpektrum {
         }
     }
 
-    // -------------------------
-    // File IO
-    // -------------------------
     private static byte[] readFile(String filePath) throws IOException {
         try (InputStream in = new FileInputStream(filePath)) {
             return in.readAllBytes();
         }
     }
 
-    // -------------------------
-    // Conversions (1:1)
-    // -------------------------
-
-    // Python: Convert_to_int(binary): unpack('i') in 4-byte chunks, x=i*0.02
-    // Implementiert als: Bereich [from, to) aus content (wie Python slicing)
     private static IntDoublePair convertToInt(byte[] content, int from, int toExclusive) {
         int len = toExclusive - from;
         if (len % 4 != 0) {
@@ -115,8 +197,8 @@ public class TracorSpektrum {
         ByteBuffer bb = ByteBuffer.wrap(content, from, len).order(ByteOrder.LITTLE_ENDIAN);
 
         for (int i = 0; i < n; i++) {
-            ints[i] = bb.getInt();      // wie struct.unpack('i', ...)
-            xs[i] = i ;           // exakt wie Python
+            ints[i] = bb.getInt();
+            xs[i] = i;
         }
         return new IntDoublePair(ints, xs);
     }
@@ -124,13 +206,13 @@ public class TracorSpektrum {
     private static class IntDoublePair {
         final int[] ints;
         final double[] xs;
+
         IntDoublePair(int[] ints, double[] xs) {
             this.ints = ints;
             this.xs = xs;
         }
     }
 
-    // Python: Convert_to_short(binary): unpack('H') -> unsigned short little-endian
     private static List<Integer> convertToUShort(byte[] content, int from, int toExclusive) {
         int len = toExclusive - from;
         if (len % 2 != 0) {
@@ -142,31 +224,22 @@ public class TracorSpektrum {
 
         ByteBuffer bb = ByteBuffer.wrap(content, from, len).order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < n; i++) {
-            int unsigned = Short.toUnsignedInt(bb.getShort()); // entspricht 'H'
+            int unsigned = Short.toUnsignedInt(bb.getShort());
             out.add(unsigned);
         }
         return out;
     }
 
-    // Python: Convert_to_char(binary):
-    // liest byteweise char und nimmt nur alpha/space/digit
     private static String convertToCharFiltered(byte[] content, int from, int toExclusive) {
         StringBuilder sb = new StringBuilder();
         for (int i = from; i < toExclusive; i++) {
-            // Python decode("utf-8") pro Byte ist faktisch: ASCII subset; wir machen das gleich
             char c = (char) (content[i] & 0xFF);
-
-            // Python: buchstabe.isalpha() or isspace() or isdigit()
             if (Character.isLetter(c) || Character.isWhitespace(c) || Character.isDigit(c)) {
                 sb.append(c);
             }
         }
-        return sb.toString();
+        return sb.toString().trim();
     }
-
-    // -------------------------
-    // SPE Writer (exakt nach Python)
-    // -------------------------
 
     private static void writeSpeFile(String outPath,
                                      String name,
@@ -178,16 +251,14 @@ public class TracorSpektrum {
                                      int[] ySpec,
                                      double[] xValues) throws IOException {
 
-        // Python: format_number(num, leerzeichen=8) => str(num).rjust(leerzeichen)
-        // Für $DATA start/end wird leerzeichen=10 verwendet.
-        try (BufferedWriter w = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outPath), StandardCharsets.UTF_8))) {
+        try (BufferedWriter w = new BufferedWriter(
+                new OutputStreamWriter(new FileOutputStream(outPath), StandardCharsets.UTF_8))) {
 
             w.write("$SPEC_ID:\n");
             w.write(name);
             w.write("\n");
 
             w.write("$DATE_MEA:\n");
-            // Python: datetime.now().strftime("%m-%d-%Y %H:%M:%S")
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("MM-dd-yyyy HH:mm:ss");
             w.write(LocalDateTime.now().format(fmt));
             w.write("\n");
@@ -198,7 +269,7 @@ public class TracorSpektrum {
 
             w.write("$MCA_CAL:\n");
             w.write("3\n");
-            w.write("0.000000e+000 2.000000e-002 0.000000e+000\n");
+            w.write("0.000000e+000 2.026000e-002 0.000000e+000\n");
 
             w.write("$Info:\n");
             w.write("Messzeit:" + measTimeSec + "sec, Spannung:" + voltageKv + "kV, Strom:" + currentmA + "mA\n");
@@ -211,8 +282,6 @@ public class TracorSpektrum {
 
             for (int i = 0; i < xValues.length; i++) {
                 w.write(rjust(Integer.toString(ySpec[i]), 8));
-                // Python: if i % 10 == 0: newline
-                // Hinweis: Das macht schon bei i=0 einen Zeilenumbruch (exakt übernehmen!)
                 if (i % 10 == 0) {
                     w.write("\n");
                 }
@@ -227,27 +296,4 @@ public class TracorSpektrum {
         sb.append(s);
         return sb.toString();
     }
-
-
-
-    public static void main(String[] args) {
-        String inFile = "C:\\Users\\julia\\OneDrive\\Dokumente\\A_Christian\\JAVASPE\\SPECTRUM.118";
-        boolean info = true;
-
-        boolean saveSpe = true;
-        String outPrefix = "C:\\Users\\julia\\OneDrive\\Dokumente\\A_Christian\\JAVASPE\\";
-
-        try {
-            // Ordner sicherstellen
-            new File(outPrefix).mkdirs();
-
-            Result res = tracorDatenToSpe(inFile, info, saveSpe, outPrefix);
-            System.out.println("SPE geschrieben für: " + res.name);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
 }
-
-

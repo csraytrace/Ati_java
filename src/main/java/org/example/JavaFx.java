@@ -195,7 +195,8 @@ public class JavaFx extends Application {
                 buildDetectorTab(),
                 buildFiltersTab(),
                 buildFunctionFiltersTab(),
-                buildConcentrationsTab()
+                buildConcentrationsTab(),
+                buildSpectraTab()
         );
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
@@ -6742,6 +6743,454 @@ public class JavaFx extends Application {
             calcRunning.set(false);
             new Alert(Alert.AlertType.ERROR, "Calculation error:\n" + ex.getMessage()).showAndWait();
         }
+    }
+
+
+
+
+
+
+    private LineChart<Number, Number> speChart;
+    private XYSeries currentSpeSeries;
+    private java.nio.file.Path currentSpePath;
+
+    private final ObservableList<java.nio.file.Path> spePaths = FXCollections.observableArrayList();
+    private ComboBox<java.nio.file.Path> speFileCombo;
+
+
+    private TextField calA0Field;
+    private TextField calA1Field;
+    private TextField calA2Field;
+
+    private Button axisModeButton;
+
+    private boolean isEnergyMode() {
+        return axisModeButton != null && "Energy".equals(axisModeButton.getText());
+    }
+
+
+    private double getCalibrationValue(TextField field, double fallback) {
+        if (field == null) return fallback;
+
+        String text = field.getText();
+        if (text == null) return fallback;
+
+        text = text.trim();
+        if (text.isEmpty()) return fallback;
+
+        try {
+            return Double.parseDouble(text.replace(',', '.'));
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+
+
+    private XYSeries buildDisplayedSeries(XYSeries source) {
+        if (source == null) return null;
+
+        if (!isEnergyMode()) {
+            return source;
+        }
+
+        double a0 = getCalibrationValue(calA0Field, 0.0);
+        double a1 = getCalibrationValue(calA1Field, 0.02);
+        double a2 = getCalibrationValue(calA2Field, 0.0);
+
+        double[] oldX = source.xArrayCopy();
+        double[] y = source.yArrayCopy();
+        double[] newX = new double[oldX.length];
+
+        for (int i = 0; i < oldX.length; i++) {
+            double ch = oldX[i];
+            newX[i] = a0 + a1 * ch + a2 * ch * ch;
+        }
+
+        return XYSeries.of(newX, y, source.title());
+    }
+
+
+    private void updateSpeChartAxisLabel() {
+        if (speChart == null) return;
+        if (!(speChart.getXAxis() instanceof NumberAxis xAxis)) return;
+
+        xAxis.setLabel(isEnergyMode() ? "Energy" : "Channel");
+    }
+
+
+    private void refreshCurrentSpePlot() {
+        if (currentSpeSeries == null) {
+            if (speChart != null) {
+                speChart.getData().clear();
+            }
+            return;
+        }
+
+        updateSpeChartAxisLabel();
+        XYSeries displaySeries = buildDisplayedSeries(currentSpeSeries);
+        plotSeries(displaySeries);
+    }
+
+
+
+    private void loadAndDisplaySpe(java.nio.file.Path path) {
+        if (path == null) {
+            currentSpePath = null;
+            currentSpeSeries = null;
+            if (speChart != null) {
+                speChart.getData().clear();
+            }
+            return;
+        }
+
+        try {
+            XYSeries series = XYSeriesIO.fromSpe(path);
+            currentSpePath = path;
+            currentSpeSeries = series;
+            refreshCurrentSpePlot();
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            showError("SPE konnte nicht geladen werden:\n" + path + "\n\n" + ex.getMessage());
+        }
+    }
+
+
+    private void openFileDirectly(java.nio.file.Path path) {
+        if (path == null) return;
+
+        try {
+            if (java.nio.file.Files.exists(path) && java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop.getDesktop().open(path.toFile());
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+
+    private void plotSeries(XYSeries series) {
+        if (series == null || speChart == null) return;
+
+        XYChart.Series<Number, Number> fxSeries = new XYChart.Series<>();
+        fxSeries.setName(series.title());
+
+        for (int i = 0; i < series.size(); i++) {
+            fxSeries.getData().add(new XYChart.Data<>(series.x(i), series.y(i)));
+        }
+
+        speChart.getData().clear();
+        speChart.getData().add(fxSeries);
+    }
+
+
+    private void loadAndPlotSpe(java.nio.file.Path path) {
+        if (path == null) {
+            showError("Keine SPE-Datei ausgewählt.");
+            return;
+        }
+
+        try {
+            XYSeries series = XYSeriesIO.fromSpe(path);
+            currentSpePath = path;
+            currentSpeSeries = series;
+            plotSeries(series);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            showError("SPE konnte nicht geladen werden:\n" + path + "\n\n" + ex.getMessage());
+        }
+    }
+
+
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Fehler");
+        alert.setHeaderText("Aktion fehlgeschlagen");
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+
+
+
+    private void addSpectrumFile(java.nio.file.Path inputPath) {
+        if (inputPath == null) return;
+
+        try {
+            java.nio.file.Path finalPath = normalizeToSpePath(inputPath);
+
+            if (!spePaths.contains(finalPath)) {
+                spePaths.add(finalPath);
+            }
+
+            // Optional: gleich auswählen und plotten
+            if (speFileCombo != null) {
+                speFileCombo.setValue(finalPath);
+            }
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            showError("Datei konnte nicht übernommen werden:\n" + inputPath + "\n\n" + ex.getMessage());
+        }
+    }
+
+    private java.nio.file.Path normalizeToSpePath(java.nio.file.Path inputPath) throws IOException {
+        if (inputPath == null) {
+            throw new IllegalArgumentException("Pfad ist null");
+        }
+
+        String name = inputPath.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+
+        // Normale SPE-Datei
+        if (name.endsWith(".spe")) {
+            return inputPath;
+        }
+
+        // Tracor-Datei mit numerischer Endung und passender Länge
+        if (TracorSpektrum.isTracorCandidate(inputPath)) {
+            return TracorSpektrum.convertToSpeBesideSource(inputPath, false, false);
+        }
+
+        throw new IOException("Nicht unterstützt. Erlaubt sind .spe oder erkannte Tracor-Dateien (z. B. .112, .118).");
+    }
+
+
+
+
+    private Tab buildSpectraTab() {
+        // --- Titel ---
+        Label title = new Label("SPE Data");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
+
+        // --- Liste der eingelesenen Dateien ---
+        ListView<java.nio.file.Path> list = new ListView<>(spePaths);
+        list.setFixedCellSize(28);
+        list.setPrefHeight(6 * list.getFixedCellSize() + 2);
+        list.setMaxHeight(Region.USE_PREF_SIZE);
+        list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        });
+
+        // Doppel-Klick -> Datei direkt öffnen
+        list.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                java.nio.file.Path p = list.getSelectionModel().getSelectedItem();
+                if (p != null) {
+                    openFileDirectly(p);
+                }
+            }
+        });
+
+        // Drag & Drop: nur .spe
+        list.setOnDragOver(ev -> {
+            if (ev.getDragboard().hasFiles()) {
+                ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            }
+            ev.consume();
+        });
+
+        list.setOnDragDropped(ev -> {
+            var db = ev.getDragboard();
+            boolean success = false;
+
+            if (db.hasFiles()) {
+                boolean addedAny = false;
+
+                for (java.io.File f : db.getFiles()) {
+                    java.nio.file.Path p = f.toPath();
+
+                    try {
+                        java.nio.file.Path finalPath = normalizeToSpePath(p);
+                        if (!spePaths.contains(finalPath)) {
+                            spePaths.add(finalPath);
+                            addedAny = true;
+                        }
+                    } catch (Exception ignored) {
+                        // ignorieren
+                    }
+                }
+
+                success = addedAny;
+            }
+
+            ev.setDropCompleted(success);
+            ev.consume();
+        });
+
+        // --- Controls: Add / Open / Remove / Clear ---
+        Button btnAdd = new Button("Add…");
+        btnAdd.setOnAction(e -> {
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("SPE-Dateien wählen");
+            fc.getExtensionFilters().addAll(
+                    new javafx.stage.FileChooser.ExtensionFilter("SPE und Tracor", "*.spe", "*.SPE", "*.*"),
+                    new javafx.stage.FileChooser.ExtensionFilter("Alle Dateien", "*.*")
+            );
+
+            var owner = list.getScene() != null ? list.getScene().getWindow() : null;
+            var chosen = fc.showOpenMultipleDialog(owner);
+
+            if (chosen != null) {
+                for (var f : chosen) {
+                    addSpectrumFile(f.toPath());
+                }
+            }
+        });
+
+        Button btnOpen = new Button("Open");
+        btnOpen.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
+        btnOpen.setOnAction(e -> {
+            var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            for (var p : sel) {
+                openFileDirectly(p);
+            }
+        });
+
+        Button btnRemove = new Button("Remove");
+        btnRemove.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
+        btnRemove.setOnAction(e -> {
+            var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            spePaths.removeAll(sel);
+
+            if (currentSpePath != null && !spePaths.contains(currentSpePath)) {
+                currentSpePath = null;
+                currentSpeSeries = null;
+                if (speChart != null) {
+                    speChart.getData().clear();
+                }
+                if (speFileCombo != null && speFileCombo.getValue() != null && !spePaths.contains(speFileCombo.getValue())) {
+                    speFileCombo.setValue(null);
+                }
+            }
+        });
+
+        Button btnClear = new Button("Clear");
+        btnClear.disableProperty().bind(Bindings.isEmpty(spePaths));
+        btnClear.setOnAction(e -> {
+            spePaths.clear();
+            currentSpePath = null;
+            currentSpeSeries = null;
+            if (speChart != null) {
+                speChart.getData().clear();
+            }
+            if (speFileCombo != null) {
+                speFileCombo.setValue(null);
+            }
+        });
+
+        HBox controls = new HBox(8, btnAdd, btnOpen, new Separator(), btnRemove, btnClear);
+        controls.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Auswahlzeile ---
+        Label selLbl = new Label("SPE-Selection:");
+        speFileCombo = new ComboBox<>(spePaths);
+
+        javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        };
+
+        speFileCombo.setCellFactory(pathCellFactory);
+        speFileCombo.setButtonCell(pathCellFactory.call(null));
+        speFileCombo.setPrefWidth(320);
+
+        // automatische Plot-Erstellung bei Auswahl
+        speFileCombo.valueProperty().addListener((obs, oldVal, newVal) -> loadAndDisplaySpe(newVal));
+
+        // Modus-Button: wechselt seinen Namen
+        axisModeButton = new Button("Channel");
+        axisModeButton.setOnAction(e -> {
+            if ("Channel".equals(axisModeButton.getText())) {
+                axisModeButton.setText("Energy");
+            } else {
+                axisModeButton.setText("Channel");
+            }
+            refreshCurrentSpePlot();
+        });
+
+
+        Label formulaLeft = new Label("E =");
+        Label plus1 = new Label("+");
+        Label times1 = new Label("· ch +");
+        Label times2 = new Label("· ch²");
+
+        calA0Field = new TextField("0.0");
+        calA0Field.setPrefWidth(80);
+
+        calA1Field = new TextField("0.02");
+        calA1Field.setPrefWidth(80);
+
+        calA2Field = new TextField("0.0");
+        calA2Field.setPrefWidth(80);
+
+// Nur im Energy-Modus neu rechnen
+        calA0Field.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (isEnergyMode()) {
+                refreshCurrentSpePlot();
+            }
+        });
+
+        calA1Field.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (isEnergyMode()) {
+                refreshCurrentSpePlot();
+            }
+        });
+
+        calA2Field.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (isEnergyMode()) {
+                refreshCurrentSpePlot();
+            }
+        });
+
+        HBox calibrationFormulaRow = new HBox(
+                6,
+                axisModeButton,
+                formulaLeft,
+                calA0Field,
+                plus1,
+                calA1Field,
+                times1,
+                calA2Field,
+                times2
+        );
+        calibrationFormulaRow.setAlignment(Pos.CENTER_LEFT);
+
+        VBox selectionArea = new VBox(8,
+                new HBox(8, selLbl, speFileCombo),
+                calibrationFormulaRow
+        );
+        selectionArea.setAlignment(Pos.CENTER_LEFT);
+
+        // --- Chart ---
+        NumberAxis xAxis = new NumberAxis();
+        xAxis.setLabel("Channel");
+
+        NumberAxis yAxis = new NumberAxis();
+        yAxis.setLabel("Counts");
+
+        speChart = new LineChart<>(xAxis, yAxis);
+        speChart.setTitle("SPE Plot");
+        speChart.setCreateSymbols(false);
+        speChart.setAnimated(false);
+        speChart.setMinHeight(400);
+
+        VBox content = new VBox(10, title, controls, list, selectionArea, speChart);
+        content.setPadding(new Insets(10));
+
+        Tab tab = new Tab("Spectra");
+        tab.setClosable(false);
+        tab.setContent(content);
+
+        return tab;
     }
 
 

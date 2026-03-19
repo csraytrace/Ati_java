@@ -82,7 +82,7 @@ public class TestBobyqa {
 
         //double[] startwerte = {15, 3, 0, 1.2, 0.95, 10};
         double[] startwerte = {0.8, 15, 2, 0.1, 0.1, 1.1, 25};
-        String para="Emin=0.05, Emax=40,step=0.05, messzeit=220";
+        String para="Emin=0.0, Emax=40,step=0.05, messzeit=220";
         //"sigma=0.8, raumwinkel=0.9, Einfallswinkelalpha=8, Einfallswinkelbeta=70"
 
 

@@ -244,6 +244,7 @@ public class Kalibrierung {
             applySettingsToBuilder(builder, einstellung);
             builder.setFilterRöhre(filterRöhre);
             builder.setFilterDet(filterDet);
+            //System.out.println(builder.dumpState());
             CalcI calc = builder.build();
             PreparedValues pv = calc.werteVorbereitenAlle();
 

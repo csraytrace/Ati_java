@@ -196,7 +196,8 @@ public class JavaFx extends Application {
                 buildFiltersTab(),
                 buildFunctionFiltersTab(),
                 buildConcentrationsTab(),
-                buildSpectraTab()
+                buildSpectraTab(),
+                buildBobyqaTab()
         );
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
@@ -7191,6 +7192,860 @@ public class JavaFx extends Application {
         tab.setContent(content);
 
         return tab;
+    }
+
+
+
+
+
+
+
+    private ListView<java.nio.file.Path> bobyqaAvailableFilesList;
+    private TableView<OptimizationVarRow> bobyqaVarTable;
+    private TableView<CalibrationMeasurementRow> bobyqaMeasurementTable;
+    private TextArea bobyqaOutputArea;
+
+    private TextField tfBobyqaEmin;
+    private TextField tfBobyqaEmax;
+    private TextField tfBobyqaStep;
+    private TextField tfBobyqaMesszeit;
+
+    private CheckBox chkBobyqaCondition;
+
+    private final javafx.collections.ObservableList<OptimizationVarRow> bobyqaVarRows =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private final javafx.collections.ObservableList<CalibrationMeasurementRow> bobyqaMeasurementRows =
+            javafx.collections.FXCollections.observableArrayList();
+
+    private final javafx.beans.property.BooleanProperty bobyqaRunning =
+            new javafx.beans.property.SimpleBooleanProperty(false);
+
+
+
+    public static class OptimizationVarRow {
+        private final javafx.beans.property.BooleanProperty selected =
+                new javafx.beans.property.SimpleBooleanProperty(true);
+        private final javafx.beans.property.StringProperty variableName =
+                new javafx.beans.property.SimpleStringProperty("");
+        private final javafx.beans.property.DoubleProperty lowerBound =
+                new javafx.beans.property.SimpleDoubleProperty(0.0);
+        private final javafx.beans.property.DoubleProperty upperBound =
+                new javafx.beans.property.SimpleDoubleProperty(1.0);
+
+        public OptimizationVarRow(String variableName, double lowerBound, double upperBound) {
+            this.variableName.set(variableName);
+            this.lowerBound.set(lowerBound);
+            this.upperBound.set(upperBound);
+        }
+
+        public boolean isSelected() { return selected.get(); }
+        public javafx.beans.property.BooleanProperty selectedProperty() { return selected; }
+        public void setSelected(boolean selected) { this.selected.set(selected); }
+
+        public String getVariableName() { return variableName.get(); }
+        public javafx.beans.property.StringProperty variableNameProperty() { return variableName; }
+        public void setVariableName(String variableName) { this.variableName.set(variableName); }
+
+        public double getLowerBound() { return lowerBound.get(); }
+        public javafx.beans.property.DoubleProperty lowerBoundProperty() { return lowerBound; }
+        public void setLowerBound(double lowerBound) { this.lowerBound.set(lowerBound); }
+
+        public double getUpperBound() { return upperBound.get(); }
+        public javafx.beans.property.DoubleProperty upperBoundProperty() { return upperBound; }
+        public void setUpperBound(double upperBound) { this.upperBound.set(upperBound); }
+    }
+
+
+
+    public static class CalibrationMeasurementRow {
+        private final javafx.beans.property.BooleanProperty selected =
+                new javafx.beans.property.SimpleBooleanProperty(true);
+
+        private final javafx.beans.property.ObjectProperty<java.nio.file.Path> sourceFile =
+                new javafx.beans.property.SimpleObjectProperty<>();
+
+        private final javafx.beans.property.StringProperty element =
+                new javafx.beans.property.SimpleStringProperty("");
+
+        // 0 = KAlpha, 1 = LAlpha
+        private final javafx.beans.property.IntegerProperty transition =
+                new javafx.beans.property.SimpleIntegerProperty(0);
+
+        private final javafx.beans.property.DoubleProperty measuredIntensity =
+                new javafx.beans.property.SimpleDoubleProperty(0.0);
+
+        public CalibrationMeasurementRow(java.nio.file.Path sourceFile, String element, int transition, double measuredIntensity) {
+            this.sourceFile.set(sourceFile);
+            this.element.set(element);
+            this.transition.set(transition);
+            this.measuredIntensity.set(measuredIntensity);
+        }
+
+        public boolean isSelected() { return selected.get(); }
+        public javafx.beans.property.BooleanProperty selectedProperty() { return selected; }
+        public void setSelected(boolean selected) { this.selected.set(selected); }
+
+        public java.nio.file.Path getSourceFile() { return sourceFile.get(); }
+        public javafx.beans.property.ObjectProperty<java.nio.file.Path> sourceFileProperty() { return sourceFile; }
+        public void setSourceFile(java.nio.file.Path sourceFile) { this.sourceFile.set(sourceFile); }
+
+        public String getElement() { return element.get(); }
+        public javafx.beans.property.StringProperty elementProperty() { return element; }
+        public void setElement(String element) { this.element.set(element); }
+
+        public int getTransition() { return transition.get(); }
+        public javafx.beans.property.IntegerProperty transitionProperty() { return transition; }
+        public void setTransition(int transition) { this.transition.set(transition); }
+
+        public double getMeasuredIntensity() { return measuredIntensity.get(); }
+        public javafx.beans.property.DoubleProperty measuredIntensityProperty() { return measuredIntensity; }
+        public void setMeasuredIntensity(double measuredIntensity) { this.measuredIntensity.set(measuredIntensity); }
+    }
+
+
+
+
+    private static class EditingDoubleCell<S> extends TableCell<S, Number> {
+        private final TextField textField = new TextField();
+
+        public EditingDoubleCell() {
+            textField.setOnAction(e -> commitHelper());
+            textField.focusedProperty().addListener((obs, oldV, newV) -> {
+                if (!newV) commitHelper();
+            });
+        }
+
+        private void commitHelper() {
+            try {
+                double value = parseFlexibleDouble(textField.getText());
+                commitEdit(value);
+            } catch (Exception ex) {
+                cancelEdit();
+            }
+        }
+
+        @Override
+        public void startEdit() {
+            if (isEmpty()) return;
+            super.startEdit();
+            textField.setText(getItem() == null ? "" : getItem().toString());
+            setText(null);
+            setGraphic(textField);
+            textField.requestFocus();
+            textField.selectAll();
+        }
+
+        @Override
+        public void cancelEdit() {
+            super.cancelEdit();
+            setGraphic(null);
+            setText(getItem() == null ? "" : getItem().toString());
+        }
+
+        @Override
+        protected void updateItem(Number item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setText(null);
+                setGraphic(null);
+            } else if (isEditing()) {
+                textField.setText(item == null ? "" : item.toString());
+                setText(null);
+                setGraphic(textField);
+            } else {
+                setText(item == null ? "" : item.toString());
+                setGraphic(null);
+            }
+        }
+    }
+
+
+    private static class EditingIntegerCell<S> extends TableCell<S, Number> {
+        private final TextField textField = new TextField();
+
+        public EditingIntegerCell() {
+            textField.setOnAction(e -> commitHelper());
+            textField.focusedProperty().addListener((obs, oldV, newV) -> {
+                if (!newV) commitHelper();
+            });
+        }
+
+        private void commitHelper() {
+            try {
+                int value = Integer.parseInt(textField.getText().trim());
+                commitEdit(value);
+            } catch (Exception ex) {
+                cancelEdit();
+            }
+        }
+
+        @Override
+        public void startEdit() {
+            if (isEmpty()) return;
+            super.startEdit();
+            textField.setText(getItem() == null ? "" : getItem().toString());
+            setText(null);
+            setGraphic(textField);
+            textField.requestFocus();
+            textField.selectAll();
+        }
+
+        @Override
+        public void cancelEdit() {
+            super.cancelEdit();
+            setGraphic(null);
+            setText(getItem() == null ? "" : getItem().toString());
+        }
+
+        @Override
+        protected void updateItem(Number item, boolean empty) {
+            super.updateItem(item, empty);
+            if (empty) {
+                setText(null);
+                setGraphic(null);
+            } else if (isEditing()) {
+                textField.setText(item == null ? "" : item.toString());
+                setText(null);
+                setGraphic(textField);
+            } else {
+                setText(item == null ? "" : item.toString());
+                setGraphic(null);
+            }
+        }
+    }
+
+
+    private static double parseFlexibleDouble(String s) {
+        if (s == null) throw new IllegalArgumentException("null");
+        return Double.parseDouble(s.trim().replace(",", "."));
+    }
+
+    private static String safeText(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+
+
+    private void initDefaultBobyqaVariables() {
+        if (!bobyqaVarRows.isEmpty()) return;
+
+        bobyqaVarRows.addAll(
+                new OptimizationVarRow("sigma", 0.8, 1.0314),
+                new OptimizationVarRow("Einfallswinkelalpha", 19.0, 21.0),
+                new OptimizationVarRow("activeLayer", 2.0, 4.0),
+                new OptimizationVarRow("Totschicht", 0.0, 0.2),
+                new OptimizationVarRow("charzucont", 0.8, 1.1),
+                new OptimizationVarRow("Kontaktmaterialdicke", 10.0, 40.0)
+        );
+    }
+
+
+
+    private Tab buildBobyqaTab() {
+        initDefaultBobyqaVariables();
+
+        Label title = new Label("BOBYQA Calibration");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
+
+        Label lblAvailable = new Label("Available input files (from Calculation):");
+
+        bobyqaAvailableFilesList = new ListView<>(concPaths);
+        bobyqaAvailableFilesList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        bobyqaAvailableFilesList.setPrefHeight(180);
+        bobyqaAvailableFilesList.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(java.nio.file.Path item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.getFileName().toString());
+            }
+        });
+
+        Button btnUseSelectedFiles = new Button("Use selected files for calibration");
+        btnUseSelectedFiles.disableProperty().bind(
+                Bindings.isEmpty(bobyqaAvailableFilesList.getSelectionModel().getSelectedItems())
+                        .or(bobyqaRunning)
+        );
+        btnUseSelectedFiles.setOnAction(e -> {
+            List<java.nio.file.Path> selected = new ArrayList<>(bobyqaAvailableFilesList.getSelectionModel().getSelectedItems());
+            addSelectedFilesAsCalibrationMeasurements(selected);
+        });
+
+        VBox fileBox = new VBox(8, lblAvailable, bobyqaAvailableFilesList, btnUseSelectedFiles);
+
+        chkBobyqaCondition = new CheckBox("Use angle condition α + β = 90°");
+        chkBobyqaCondition.setSelected(true);
+
+        HBox paramRow = new HBox(10, chkBobyqaCondition);
+        paramRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label lblVars = new Label("Optimization variables:");
+
+        bobyqaVarTable = buildBobyqaVarTable();
+
+        Button btnAddVar = new Button("Add variable");
+        btnAddVar.disableProperty().bind(bobyqaRunning);
+        btnAddVar.setOnAction(e -> bobyqaVarRows.add(new OptimizationVarRow("sigma", 0.0, 1.0)));
+
+        Button btnRemoveVar = new Button("Remove selected variable rows");
+        btnRemoveVar.disableProperty().bind(
+                Bindings.isEmpty(bobyqaVarTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
+        );
+        btnRemoveVar.setOnAction(e -> {
+            List<OptimizationVarRow> sel = new ArrayList<>(bobyqaVarTable.getSelectionModel().getSelectedItems());
+            bobyqaVarRows.removeAll(sel);
+        });
+
+        HBox varButtons = new HBox(8, btnAddVar, btnRemoveVar);
+        varButtons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox varBox = new VBox(8, lblVars, bobyqaVarTable, varButtons);
+
+        Label lblMeasurements = new Label("Measurements used in minimization:");
+
+        bobyqaMeasurementTable = buildBobyqaMeasurementTable();
+
+        Button btnRemoveMeasurements = new Button("Remove selected measurement rows");
+        btnRemoveMeasurements.disableProperty().bind(
+                Bindings.isEmpty(bobyqaMeasurementTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
+        );
+        btnRemoveMeasurements.setOnAction(e -> {
+            List<CalibrationMeasurementRow> sel = new ArrayList<>(bobyqaMeasurementTable.getSelectionModel().getSelectedItems());
+            bobyqaMeasurementRows.removeAll(sel);
+        });
+
+        Button btnClearMeasurements = new Button("Clear measurements");
+        btnClearMeasurements.disableProperty().bind(Bindings.isEmpty(bobyqaMeasurementRows).or(bobyqaRunning));
+        btnClearMeasurements.setOnAction(e -> bobyqaMeasurementRows.clear());
+
+        HBox measurementButtons = new HBox(8, btnRemoveMeasurements, btnClearMeasurements);
+        measurementButtons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox measurementBox = new VBox(8, lblMeasurements, bobyqaMeasurementTable, measurementButtons);
+
+        Button btnRunBobyqa = new Button("Run BOBYQA Minimization");
+        btnRunBobyqa.disableProperty().bind(
+                bobyqaRunning
+                        .or(Bindings.isEmpty(bobyqaMeasurementRows))
+                        .or(Bindings.isEmpty(bobyqaVarRows))
+        );
+        btnRunBobyqa.setOnAction(e -> runBobyqaCalibrationAsync());
+
+        bobyqaOutputArea = new TextArea();
+        bobyqaOutputArea.setEditable(false);
+        bobyqaOutputArea.setWrapText(false);
+        bobyqaOutputArea.setPrefRowCount(16);
+
+        VBox outputBox = new VBox(8, btnRunBobyqa, new Label("Output:"), bobyqaOutputArea);
+
+        VBox content = new VBox(
+                12,
+                title,
+                new Separator(),
+                fileBox,
+                new Separator(),
+                paramRow,
+                varBox,
+                measurementBox,
+                outputBox
+        );
+        content.setPadding(new Insets(14));
+
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+
+        return new Tab("BOBYQA", scrollPane);
+    }
+
+
+    private TableView<OptimizationVarRow> buildBobyqaVarTable() {
+        TableView<OptimizationVarRow> table = new TableView<>(bobyqaVarRows);
+        table.setEditable(true);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.setPrefHeight(220);
+
+        TableColumn<OptimizationVarRow, Boolean> colUse = new TableColumn<>("Use");
+        colUse.setCellValueFactory(c -> c.getValue().selectedProperty());
+        colUse.setCellFactory(CheckBoxTableCell.forTableColumn(colUse));
+        colUse.setEditable(true);
+        colUse.setPrefWidth(60);
+
+        TableColumn<OptimizationVarRow, String> colName = new TableColumn<>("Variable");
+        colName.setCellValueFactory(c -> c.getValue().variableNameProperty());
+        colName.setCellFactory(TextFieldTableCell.forTableColumn());
+        colName.setOnEditCommit(e -> e.getRowValue().setVariableName(e.getNewValue()));
+        colName.setPrefWidth(220);
+
+        TableColumn<OptimizationVarRow, Number> colLower = new TableColumn<>("Lower");
+        colLower.setCellValueFactory(c -> c.getValue().lowerBoundProperty());
+        colLower.setCellFactory(tc -> new EditingDoubleCell<>());
+        colLower.setOnEditCommit(e -> e.getRowValue().setLowerBound(e.getNewValue().doubleValue()));
+        colLower.setPrefWidth(120);
+
+        TableColumn<OptimizationVarRow, Number> colUpper = new TableColumn<>("Upper");
+        colUpper.setCellValueFactory(c -> c.getValue().upperBoundProperty());
+        colUpper.setCellFactory(tc -> new EditingDoubleCell<>());
+        colUpper.setOnEditCommit(e -> e.getRowValue().setUpperBound(e.getNewValue().doubleValue()));
+        colUpper.setPrefWidth(120);
+
+        table.getColumns().addAll(colUse, colName, colLower, colUpper);
+        return table;
+    }
+
+
+
+    private TableView<CalibrationMeasurementRow> buildBobyqaMeasurementTable() {
+        TableView<CalibrationMeasurementRow> table = new TableView<>(bobyqaMeasurementRows);
+        table.setEditable(true);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.setPrefHeight(280);
+
+        TableColumn<CalibrationMeasurementRow, Boolean> colUse = new TableColumn<>("Use");
+        colUse.setCellValueFactory(c -> c.getValue().selectedProperty());
+        colUse.setCellFactory(CheckBoxTableCell.forTableColumn(colUse));
+        colUse.setPrefWidth(60);
+
+        TableColumn<CalibrationMeasurementRow, String> colFile = new TableColumn<>("File");
+        colFile.setCellValueFactory(c ->
+                new javafx.beans.property.SimpleStringProperty(
+                        c.getValue().getSourceFile() == null ? "" : c.getValue().getSourceFile().getFileName().toString()
+                )
+        );
+        colFile.setPrefWidth(220);
+
+        TableColumn<CalibrationMeasurementRow, String> colElement = new TableColumn<>("Element");
+        colElement.setCellValueFactory(c -> c.getValue().elementProperty());
+        colElement.setCellFactory(TextFieldTableCell.forTableColumn());
+        colElement.setOnEditCommit(e -> e.getRowValue().setElement(e.getNewValue()));
+        colElement.setPrefWidth(100);
+
+        TableColumn<CalibrationMeasurementRow, Number> colTransition = new TableColumn<>("Transition");
+        colTransition.setCellValueFactory(c -> c.getValue().transitionProperty());
+        colTransition.setCellFactory(tc -> new EditingIntegerCell<>());
+        colTransition.setOnEditCommit(e -> e.getRowValue().setTransition(e.getNewValue().intValue()));
+        colTransition.setPrefWidth(100);
+
+        TableColumn<CalibrationMeasurementRow, Number> colIntensity = new TableColumn<>("Measured Intensity");
+        colIntensity.setCellValueFactory(c -> c.getValue().measuredIntensityProperty());
+        colIntensity.setCellFactory(tc -> new EditingDoubleCell<>());
+        colIntensity.setOnEditCommit(e -> e.getRowValue().setMeasuredIntensity(e.getNewValue().doubleValue()));
+        colIntensity.setPrefWidth(180);
+
+        table.getColumns().addAll(colUse, colFile, colElement, colTransition, colIntensity);
+        return table;
+    }
+
+
+    private void addSelectedFilesAsCalibrationMeasurements(List<java.nio.file.Path> selectedFiles) {
+        for (java.nio.file.Path p : selectedFiles) {
+            if (p == null) continue;
+
+            try {
+                List<CalibrationMeasurementRow> rows = extractCalibrationRowsFromFile(p);
+                bobyqaMeasurementRows.addAll(rows);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showError("Fehler beim Einlesen der Datei " + p.getFileName(), ex.getMessage());
+            }
+        }
+    }
+
+
+
+
+    private List<CalibrationMeasurementRow> extractCalibrationRowsFromFile(java.nio.file.Path path) throws Exception {
+        if (path == null) {
+            throw new IllegalArgumentException("Pfad ist null.");
+        }
+
+        javafx.collections.ObservableList<ConcRow> rows = getOrBuildRowsForFile(path);
+        List<CalibrationMeasurementRow> result = new ArrayList<>();
+
+        for (ConcRow row : rows) {
+            if (row == null) continue;
+            if (!row.enabled.get()) continue;
+
+            String element = row.element.get();
+            if (element == null || element.isBlank()) continue;
+
+            int transition = mapTransitionToBobyqa(row.transition.get(), path, element);
+
+            double intensity = row.intensity.get();
+            if (!Double.isFinite(intensity)) {
+                throw new IllegalArgumentException(
+                        "Ungültige Intensität in Datei " + path.getFileName()
+                                + " für Element " + element + ": " + intensity
+                );
+            }
+
+            if (intensity <= 0.0) continue;
+
+            CalibrationMeasurementRow candidate =
+                    new CalibrationMeasurementRow(path, element.trim(), transition, intensity);
+
+            if (!containsCalibrationRow(candidate)) {
+                result.add(candidate);
+            }
+        }
+
+        return result;
+    }
+
+    private int mapTransitionToBobyqa(String transitionText, java.nio.file.Path path, String element) {
+        if (transitionText == null) {
+            throw new IllegalArgumentException(
+                    "Übergang ist null in Datei " + path.getFileName() + " für Element " + element
+            );
+        }
+
+        String t = transitionText.trim().toUpperCase(java.util.Locale.ROOT);
+
+        if (t.equals("K")) return 0;
+        if (t.equals("L")) return 1;
+
+        throw new IllegalArgumentException(
+                "Unbekannter Übergang '" + transitionText + "' in Datei "
+                        + path.getFileName() + " für Element " + element
+                        + ". Erlaubt sind nur K oder L."
+        );
+    }
+
+    private boolean containsCalibrationRow(CalibrationMeasurementRow candidate) {
+        for (CalibrationMeasurementRow existing : bobyqaMeasurementRows) {
+            boolean sameFile = java.util.Objects.equals(existing.getSourceFile(), candidate.getSourceFile());
+            boolean sameElement = java.util.Objects.equals(
+                    normalizeText(existing.getElement()),
+                    normalizeText(candidate.getElement())
+            );
+            boolean sameTransition = existing.getTransition() == candidate.getTransition();
+
+            if (sameFile && sameElement && sameTransition) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeText(String s) {
+        return s == null ? "" : s.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private void addParam(List<String> parts, String key, Object value) {
+        if (value == null) return;
+        String s = value.toString().trim();
+        if (s.isBlank()) return;
+        parts.add(key + "=" + s.replace(",", "."));
+    }
+
+
+
+
+    private String buildCurrentGuiParameterStringForBobyqa(List<String[]> paraVar, boolean bedingung) {
+        List<String> parts = new ArrayList<>();
+
+        // -----------------------------
+        // aktuelle numerische GUI-Werte lesen
+        // genauso wie in runConcCalculation
+        // -----------------------------
+        double alpha      = parseOrDefault(electronIncidentAngle, 20);
+        double beta       = parseOrDefault(electronTakeoffAngle, 70);
+
+        double sigma      = parseOrDefault(sigmaConst, 1.0314);
+        double c2cL       = parseOrDefault(charZuContL, 1.0);
+        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
+        double I_A        = parseOrDefault(tubeCurrent, 1.0);
+        double messzeit   = parseOrDefault(measurementTime, 30);
+        double c2c        = parseOrDefault(charZuCont, 1.0);
+
+        double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
+        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+        double tots_um    = parseOrDefault(inactiveLayer, 0.05);
+        double act_mm     = parseOrDefault(activeLayer, 3.0);
+
+        double emax       = parseOrDefault(xRayTubeVoltage, 40.0);
+        double step       = parseOrDefault(energieStep, 0.05);
+
+        // optional zusätzliche numerische Default-/GUI-Werte
+        // nur drinlassen, wenn sie für deine Rechnung wirklich relevant sind
+        double fensterW   = 0.0;
+        double raumwinkel = 1.0;
+        double phiDet     = 0.0;
+        double bedeck     = 1.0;
+        double palpha     = 45.0;
+        double pbeta      = 45.0;
+
+        // -----------------------------
+        // Builder-kompatible Parameternamen verwenden
+        // nur numerische Werte aufnehmen
+        // -----------------------------
+        addNumericParam(parts, "Einfallswinkelalpha", alpha);
+        addNumericParam(parts, "Einfallswinkelbeta",  beta);
+
+        addNumericParam(parts, "sigma", sigma);
+        addNumericParam(parts, "charzucontL", c2cL);
+        addNumericParam(parts, "FensterdickeRöhre", rFenstD_um);
+        addNumericParam(parts, "Röhrenstrom", I_A);
+        addNumericParam(parts, "messzeit", messzeit);
+        addNumericParam(parts, "charzucont", c2c);
+
+        addNumericParam(parts, "FensterdickeDet", dFenst_um);
+        addNumericParam(parts, "Kontaktmaterialdicke", kontakt_nm);
+        addNumericParam(parts, "Totschicht", tots_um);
+        addNumericParam(parts, "activeLayer", act_mm);
+
+        // diese hier nur drinlassen, wenn sie für dich wirklich gesetzt werden sollen
+        addNumericParam(parts, "Fensterwinkel", fensterW);
+        addNumericParam(parts, "Raumwinkel", raumwinkel);
+        addNumericParam(parts, "phiDet", phiDet);
+        addNumericParam(parts, "Bedeckungsfaktor", bedeck);
+        addNumericParam(parts, "palphaGrad", palpha);
+        addNumericParam(parts, "pbetaGrad", pbeta);
+
+        addNumericParam(parts, "step", step);
+        addNumericParam(parts, "Emax", emax);
+
+        // Basisstring bauen
+        String para = String.join(", ", parts);
+
+        // alle Optimierungsparameter + ggf. Gegenwinkel entfernen
+        return filterParaForGui(para, paraVar, bedingung);
+    }
+
+    private void addNumericParam(List<String> parts, String key, double value) {
+        if (!Double.isFinite(value)) return;
+        parts.add(key + "=" + Double.toString(value));
+    }
+
+    private String filterParaForGui(String para, List<String[]> paraVar, boolean bedingung) {
+        if (para == null || para.isBlank()) return para;
+
+        Set<String> optKeys = new HashSet<>();
+        for (String[] p : paraVar) {
+            if (p != null && p.length > 0 && p[0] != null) {
+                optKeys.add(normalizeParaKey(p[0]));
+            }
+        }
+
+        boolean hasAlpha = optKeys.contains("einfallswinkelalpha");
+        boolean hasBeta  = optKeys.contains("einfallswinkelbeta");
+
+        String[] tokens = para.split(",");
+        List<String> kept = new ArrayList<>();
+
+        for (String token : tokens) {
+            String t = token.trim();
+            if (t.isEmpty()) continue;
+
+            String[] kv = t.split("=", 2);
+            if (kv.length != 2) continue;
+
+            String rawKey = kv[0].trim();
+            String key = normalizeParaKey(rawKey);
+
+            // alles entfernen, was optimiert wird
+            if (optKeys.contains(key)) continue;
+
+            // bei Winkelbedingung Gegenwinkel ebenfalls entfernen
+            if (bedingung) {
+                if (hasAlpha && key.equals("einfallswinkelbeta")) continue;
+                if (hasBeta  && key.equals("einfallswinkelalpha")) continue;
+            }
+
+            kept.add(rawKey + "=" + kv[1].trim());
+        }
+
+        return String.join(", ", kept);
+    }
+
+    private String normalizeParaKey(String key) {
+        if (key == null) return "";
+        String k = key.trim().toLowerCase(Locale.ROOT);
+        k = k.replace("_", "");
+        return k;
+    }
+
+
+
+    private List<String[]> buildSelectedParaVar() {
+        List<String[]> paraVar = new ArrayList<>();
+
+        for (OptimizationVarRow row : bobyqaVarRows) {
+            if (!row.isSelected()) continue;
+
+            String name = safeText(row.getVariableName());
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("Eine ausgewählte Variable hat keinen Namen.");
+            }
+
+            paraVar.add(new String[]{name});
+        }
+
+        if (paraVar.isEmpty()) {
+            throw new IllegalArgumentException("Keine Optimierungsvariablen ausgewählt.");
+        }
+
+        return paraVar;
+    }
+
+
+    private List<double[]> buildSelectedBounds() {
+        List<double[]> bounds = new ArrayList<>();
+
+        for (OptimizationVarRow row : bobyqaVarRows) {
+            if (!row.isSelected()) continue;
+
+            double low = row.getLowerBound();
+            double high = row.getUpperBound();
+
+            if (!(low < high)) {
+                throw new IllegalArgumentException("Ungültige Grenzen für " + row.getVariableName() + ": lower >= upper");
+            }
+
+            bounds.add(new double[]{low, high});
+        }
+
+        return bounds;
+    }
+
+
+
+    private List<Probe> buildSelectedProbenForBobyqa() {
+        List<Probe> probes = new ArrayList<>();
+
+        // dieselben aktuellen Werte verwenden wie in der normalen Rechnung
+        double Emin = 0.0; // falls du kein eigenes GUI-Feld dafür hast
+        double Emax = parseOrDefault(xRayTubeVoltage, 40.0);
+        double step = parseOrDefault(energieStep, 0.01);
+
+        for (CalibrationMeasurementRow row : bobyqaMeasurementRows) {
+            if (!row.isSelected()) continue;
+
+            String symbol = safeText(row.getElement());
+            if (symbol.isBlank()) {
+                throw new IllegalArgumentException("Leeres Elementsymbol in einer Messungszeile.");
+            }
+
+            int transition = row.getTransition();
+            if (transition != 0 && transition != 1) {
+                throw new IllegalArgumentException(
+                        "Transition muss 0 (KAlpha) oder 1 (LAlpha) sein. Datei: "
+                                + (row.getSourceFile() == null ? "?" : row.getSourceFile().getFileName())
+                );
+            }
+
+            double intensityDouble = row.getMeasuredIntensity();
+            if (!Double.isFinite(intensityDouble) || intensityDouble <= 0.0) {
+                throw new IllegalArgumentException(
+                        "Ungültige Intensität für " + symbol + ": " + intensityDouble
+                );
+            }
+
+            int intensity = (int) Math.round(intensityDouble);
+
+            List<String> elementSymbole = java.util.List.of(symbol);
+            List<Integer> elementInt = java.util.List.of(intensity);
+
+            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", Emin, Emax, step, elementInt);
+
+            if (transition == 0) {
+                probe.setzeUebergangAktivFuerElementKAlpha(0);
+            } else {
+                probe.setzeUebergangAktivFuerElementLAlpha(0);
+            }
+
+            probes.add(probe);
+        }
+
+        if (probes.isEmpty()) {
+            throw new IllegalArgumentException("Keine Messungen zur Minimierung ausgewählt.");
+        }
+
+        return probes;
+    }
+
+    private void runBobyqaCalibrationAsync() {
+        javafx.concurrent.Task<String> task = new javafx.concurrent.Task<>() {
+            @Override
+            protected String call() throws Exception {
+                List<String[]> paraVar = buildSelectedParaVar();
+                List<double[]> bounds = buildSelectedBounds();
+                List<Probe> probes = buildSelectedProbenForBobyqa();
+
+                boolean bedingung = chkBobyqaCondition.isSelected();
+
+                // Vollständiger Basis-Parameterstring aus aktueller GUI
+                String para = buildCurrentGuiParameterStringForBobyqa(paraVar, bedingung);
+
+                Kalibrierung kali = new Kalibrierung(null, null);
+
+                // Startwerte bewusst ignorieren -> null
+                double[] optimum = kali.kalibrierungNLLS_bobyqa(
+                        paraVar,
+                        bounds,
+                        null,   // ungenutzt in deinem Code; besser später ganz entfernen
+                        probes,
+                        bedingung,
+                        para,
+                        null
+                );
+
+                double[] geo = Kalibrierung.berechneGeo(
+                        optimum,
+                        paraVar,
+                        probes,
+                        bedingung,
+                        para
+                );
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("BOBYQA finished\n");
+                sb.append("====================================\n");
+                sb.append("Base para string:\n");
+                sb.append(para).append("\n\n");
+
+                sb.append("Optimized parameters:\n");
+                for (int i = 0; i < optimum.length; i++) {
+                    sb.append(paraVar.get(i)[0]).append(" = ").append(optimum[i]).append("\n");
+                }
+
+                sb.append("\nGeo values:\n");
+                for (double g : geo) {
+                    sb.append(g).append("\n");
+                }
+
+                sb.append("\nmittelGeo = ").append(Kalibrierung.mittelGeo(geo)).append("\n");
+                sb.append("mittlereAbweichung = ").append(Kalibrierung.mittlereAbweichung(geo)).append("\n");
+
+                return sb.toString();
+            }
+        };
+
+        bobyqaRunning.bind(task.runningProperty());
+
+        task.setOnSucceeded(e -> {
+            bobyqaRunning.unbind();
+            bobyqaOutputArea.setText(task.getValue());
+        });
+
+        task.setOnFailed(e -> {
+            bobyqaRunning.unbind();
+            Throwable ex = task.getException();
+            String msg = ex == null ? "Unbekannter Fehler" : ex.getMessage();
+            bobyqaOutputArea.setText("Fehler bei BOBYQA:\n" + msg);
+            if (ex != null) ex.printStackTrace();
+        });
+
+        Thread th = new Thread(task, "bobyqa-calibration-thread");
+        th.setDaemon(true);
+        th.start();
+    }
+
+    private void showError(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(title);
+        alert.setContentText(message == null ? "" : message);
+        alert.showAndWait();
     }
 
 

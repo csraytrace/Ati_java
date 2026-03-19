@@ -148,4 +148,42 @@ public class CalcIBuilder {
                 filter_det
         );
     }
+
+    public String dumpState() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("CalcIBuilder State:\n");
+        sb.append("dateipfad = ").append(dateipfad).append("\n");
+        sb.append("probe = ").append(probe == null ? "null" : "Probe@" + Integer.toHexString(System.identityHashCode(probe))).append("\n");
+        sb.append("röhrenTyp = ").append(röhrenTyp).append("\n");
+        sb.append("röhrenmaterial = ").append(röhrenmaterial).append("\n");
+        sb.append("einfallswinkelalpha = ").append(einfallswinkelalpha).append("\n");
+        sb.append("einfallswinkelbeta = ").append(einfallswinkelbeta).append("\n");
+        sb.append("fensterwinkel = ").append(fensterwinkel).append("\n");
+        sb.append("sigma = ").append(sigma).append("\n");
+        sb.append("charzucontL = ").append(charzucontL).append("\n");
+        sb.append("fenstermaterialRöhre = ").append(fenstermaterialRöhre).append("\n");
+        sb.append("fensterdickeRöhre = ").append(fensterdickeRöhre).append("\n");
+        sb.append("raumwinkel = ").append(raumwinkel).append("\n");
+        sb.append("röhrenstrom = ").append(röhrenstrom).append("\n");
+        sb.append("emin = ").append(emin).append("\n");
+        sb.append("emax = ").append(emax).append("\n");
+        sb.append("step = ").append(step).append("\n");
+        sb.append("messzeit = ").append(messzeit).append("\n");
+        sb.append("charzucont = ").append(charzucont).append("\n");
+        sb.append("fenstermaterialDet = ").append(fenstermaterialDet).append("\n");
+        sb.append("fensterdickeDet = ").append(fensterdickeDet).append("\n");
+        sb.append("phiDet = ").append(phiDet).append("\n");
+        sb.append("kontaktmaterial = ").append(kontaktmaterial).append("\n");
+        sb.append("kontaktmaterialdicke = ").append(kontaktmaterialdicke).append("\n");
+        sb.append("bedeckungsfaktor = ").append(bedeckungsfaktor).append("\n");
+        sb.append("palphaGrad = ").append(palphaGrad).append("\n");
+        sb.append("pbetaGrad = ").append(pbetaGrad).append("\n");
+        sb.append("detektormaterial = ").append(detektormaterial).append("\n");
+        sb.append("totschicht = ").append(totschicht).append("\n");
+        sb.append("activeLayer = ").append(activeLayer).append("\n");
+        sb.append("filter_röhre = ").append(filter_röhre == null ? "null" : filter_röhre.size() + " Einträge").append("\n");
+        sb.append("filter_det = ").append(filter_det == null ? "null" : filter_det.size() + " Einträge").append("\n");
+        sb.append("emaxGeändert = ").append(emaxGeändert).append("\n");
+        return sb.toString();
+    }
 }

@@ -110,6 +110,48 @@ public class Verbindung {
                 .toArray(String[]::new);
     }
 
+    public double getCharakteristischeUebergangsenergieKAlphaKeV() {
+        double summeGewichtet = 0.0;
+        double summeGewichte = 0.0;
+
+        for (int i = 0; i < Elementliste.size(); i++) {
+            Element element = Elementliste.get(i);
+            List<Übergang> uebergaenge = element.getÜbergänge();
+
+            double summeElement = 0.0;
+            int anzahlKAlpha = 0;
+
+            for (Übergang u : uebergaenge) {
+                String von = u.getSchale_von().name();
+                String zu  = u.getSchale_zu().name();
+
+                boolean istKAlpha = von.equalsIgnoreCase("K")
+                        && (zu.equalsIgnoreCase("L2") || zu.equalsIgnoreCase("L3"));
+
+                if (istKAlpha) {
+                    summeElement += u.getEnergy();
+                    anzahlKAlpha++;
+                }
+            }
+
+            if (anzahlKAlpha > 0) {
+                double gemittelteKAlphaEnergie = summeElement / anzahlKAlpha;
+                double gewicht = konzentrationen[i];
+
+                summeGewichtet += gewicht * gemittelteKAlphaEnergie;
+                summeGewichte += gewicht;
+            }
+        }
+
+        if (summeGewichte <= 0.0) {
+            throw new IllegalStateException("Keine K-alpha-Übergänge in der Verbindung gefunden.");
+        }
+
+        return summeGewichtet / summeGewichte;
+    }
+
+
+
     public double[] getKonzentrationen() {
         return konzentrationen;
     }

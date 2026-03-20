@@ -7,6 +7,7 @@ import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -17,7 +18,9 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.Dragboard;
 import javafx.scene.layout.*;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 
@@ -49,6 +52,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.prefs.Preferences;
+import java.util.stream.Collectors;
 
 import static org.example.MathParser.parseConstExpression;
 
@@ -197,7 +201,8 @@ public class JavaFx extends Application {
                 buildFunctionFiltersTab(),
                 buildConcentrationsTab(),
                 buildSpectraTab(),
-                buildBobyqaTab()
+                buildBobyqaTab(),
+                createPTestTab()
         );
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
@@ -6816,7 +6821,7 @@ public class JavaFx extends Application {
         if (speChart == null) return;
         if (!(speChart.getXAxis() instanceof NumberAxis xAxis)) return;
 
-        xAxis.setLabel(isEnergyMode() ? "Energy" : "Channel");
+        xAxis.setLabel(isEnergyMode() ? "Energy [keV]" : "Channel");
     }
 
 
@@ -7200,16 +7205,9 @@ public class JavaFx extends Application {
 
 
 
-    private ListView<java.nio.file.Path> bobyqaAvailableFilesList;
+
     private TableView<OptimizationVarRow> bobyqaVarTable;
-    private TableView<CalibrationMeasurementRow> bobyqaMeasurementTable;
     private TextArea bobyqaOutputArea;
-
-    private TextField tfBobyqaEmin;
-    private TextField tfBobyqaEmax;
-    private TextField tfBobyqaStep;
-    private TextField tfBobyqaMesszeit;
-
     private CheckBox chkBobyqaCondition;
 
     private final javafx.collections.ObservableList<OptimizationVarRow> bobyqaVarRows =
@@ -7442,120 +7440,6 @@ public class JavaFx extends Application {
 
 
 
-    private Tab buildBobyqaTab() {
-        initDefaultBobyqaVariables();
-
-        Label title = new Label("BOBYQA Calibration");
-        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
-
-        Label lblAvailable = new Label("Available input files (from Calculation):");
-
-        bobyqaAvailableFilesList = new ListView<>(concPaths);
-        bobyqaAvailableFilesList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
-        bobyqaAvailableFilesList.setPrefHeight(180);
-        bobyqaAvailableFilesList.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(java.nio.file.Path item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? null : item.getFileName().toString());
-            }
-        });
-
-        Button btnUseSelectedFiles = new Button("Use selected files for calibration");
-        btnUseSelectedFiles.disableProperty().bind(
-                Bindings.isEmpty(bobyqaAvailableFilesList.getSelectionModel().getSelectedItems())
-                        .or(bobyqaRunning)
-        );
-        btnUseSelectedFiles.setOnAction(e -> {
-            List<java.nio.file.Path> selected = new ArrayList<>(bobyqaAvailableFilesList.getSelectionModel().getSelectedItems());
-            addSelectedFilesAsCalibrationMeasurements(selected);
-        });
-
-        VBox fileBox = new VBox(8, lblAvailable, bobyqaAvailableFilesList, btnUseSelectedFiles);
-
-        chkBobyqaCondition = new CheckBox("Use angle condition α + β = 90°");
-        chkBobyqaCondition.setSelected(true);
-
-        HBox paramRow = new HBox(10, chkBobyqaCondition);
-        paramRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label lblVars = new Label("Optimization variables:");
-
-        bobyqaVarTable = buildBobyqaVarTable();
-
-        Button btnAddVar = new Button("Add variable");
-        btnAddVar.disableProperty().bind(bobyqaRunning);
-        btnAddVar.setOnAction(e -> bobyqaVarRows.add(new OptimizationVarRow("sigma", 0.0, 1.0)));
-
-        Button btnRemoveVar = new Button("Remove selected variable rows");
-        btnRemoveVar.disableProperty().bind(
-                Bindings.isEmpty(bobyqaVarTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
-        );
-        btnRemoveVar.setOnAction(e -> {
-            List<OptimizationVarRow> sel = new ArrayList<>(bobyqaVarTable.getSelectionModel().getSelectedItems());
-            bobyqaVarRows.removeAll(sel);
-        });
-
-        HBox varButtons = new HBox(8, btnAddVar, btnRemoveVar);
-        varButtons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox varBox = new VBox(8, lblVars, bobyqaVarTable, varButtons);
-
-        Label lblMeasurements = new Label("Measurements used in minimization:");
-
-        bobyqaMeasurementTable = buildBobyqaMeasurementTable();
-
-        Button btnRemoveMeasurements = new Button("Remove selected measurement rows");
-        btnRemoveMeasurements.disableProperty().bind(
-                Bindings.isEmpty(bobyqaMeasurementTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
-        );
-        btnRemoveMeasurements.setOnAction(e -> {
-            List<CalibrationMeasurementRow> sel = new ArrayList<>(bobyqaMeasurementTable.getSelectionModel().getSelectedItems());
-            bobyqaMeasurementRows.removeAll(sel);
-        });
-
-        Button btnClearMeasurements = new Button("Clear measurements");
-        btnClearMeasurements.disableProperty().bind(Bindings.isEmpty(bobyqaMeasurementRows).or(bobyqaRunning));
-        btnClearMeasurements.setOnAction(e -> bobyqaMeasurementRows.clear());
-
-        HBox measurementButtons = new HBox(8, btnRemoveMeasurements, btnClearMeasurements);
-        measurementButtons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox measurementBox = new VBox(8, lblMeasurements, bobyqaMeasurementTable, measurementButtons);
-
-        Button btnRunBobyqa = new Button("Run BOBYQA Minimization");
-        btnRunBobyqa.disableProperty().bind(
-                bobyqaRunning
-                        .or(Bindings.isEmpty(bobyqaMeasurementRows))
-                        .or(Bindings.isEmpty(bobyqaVarRows))
-        );
-        btnRunBobyqa.setOnAction(e -> runBobyqaCalibrationAsync());
-
-        bobyqaOutputArea = new TextArea();
-        bobyqaOutputArea.setEditable(false);
-        bobyqaOutputArea.setWrapText(false);
-        bobyqaOutputArea.setPrefRowCount(16);
-
-        VBox outputBox = new VBox(8, btnRunBobyqa, new Label("Output:"), bobyqaOutputArea);
-
-        VBox content = new VBox(
-                12,
-                title,
-                new Separator(),
-                fileBox,
-                new Separator(),
-                paramRow,
-                varBox,
-                measurementBox,
-                outputBox
-        );
-        content.setPadding(new Insets(14));
-
-        ScrollPane scrollPane = new ScrollPane(content);
-        scrollPane.setFitToWidth(true);
-
-        return new Tab("BOBYQA", scrollPane);
-    }
 
 
     private TableView<OptimizationVarRow> buildBobyqaVarTable() {
@@ -7590,64 +7474,6 @@ public class JavaFx extends Application {
 
         table.getColumns().addAll(colUse, colName, colLower, colUpper);
         return table;
-    }
-
-
-
-    private TableView<CalibrationMeasurementRow> buildBobyqaMeasurementTable() {
-        TableView<CalibrationMeasurementRow> table = new TableView<>(bobyqaMeasurementRows);
-        table.setEditable(true);
-        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
-        table.setPrefHeight(280);
-
-        TableColumn<CalibrationMeasurementRow, Boolean> colUse = new TableColumn<>("Use");
-        colUse.setCellValueFactory(c -> c.getValue().selectedProperty());
-        colUse.setCellFactory(CheckBoxTableCell.forTableColumn(colUse));
-        colUse.setPrefWidth(60);
-
-        TableColumn<CalibrationMeasurementRow, String> colFile = new TableColumn<>("File");
-        colFile.setCellValueFactory(c ->
-                new javafx.beans.property.SimpleStringProperty(
-                        c.getValue().getSourceFile() == null ? "" : c.getValue().getSourceFile().getFileName().toString()
-                )
-        );
-        colFile.setPrefWidth(220);
-
-        TableColumn<CalibrationMeasurementRow, String> colElement = new TableColumn<>("Element");
-        colElement.setCellValueFactory(c -> c.getValue().elementProperty());
-        colElement.setCellFactory(TextFieldTableCell.forTableColumn());
-        colElement.setOnEditCommit(e -> e.getRowValue().setElement(e.getNewValue()));
-        colElement.setPrefWidth(100);
-
-        TableColumn<CalibrationMeasurementRow, Number> colTransition = new TableColumn<>("Transition");
-        colTransition.setCellValueFactory(c -> c.getValue().transitionProperty());
-        colTransition.setCellFactory(tc -> new EditingIntegerCell<>());
-        colTransition.setOnEditCommit(e -> e.getRowValue().setTransition(e.getNewValue().intValue()));
-        colTransition.setPrefWidth(100);
-
-        TableColumn<CalibrationMeasurementRow, Number> colIntensity = new TableColumn<>("Measured Intensity");
-        colIntensity.setCellValueFactory(c -> c.getValue().measuredIntensityProperty());
-        colIntensity.setCellFactory(tc -> new EditingDoubleCell<>());
-        colIntensity.setOnEditCommit(e -> e.getRowValue().setMeasuredIntensity(e.getNewValue().doubleValue()));
-        colIntensity.setPrefWidth(180);
-
-        table.getColumns().addAll(colUse, colFile, colElement, colTransition, colIntensity);
-        return table;
-    }
-
-
-    private void addSelectedFilesAsCalibrationMeasurements(List<java.nio.file.Path> selectedFiles) {
-        for (java.nio.file.Path p : selectedFiles) {
-            if (p == null) continue;
-
-            try {
-                List<CalibrationMeasurementRow> rows = extractCalibrationRowsFromFile(p);
-                bobyqaMeasurementRows.addAll(rows);
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                showError("Fehler beim Einlesen der Datei " + p.getFileName(), ex.getMessage());
-            }
-        }
     }
 
 
@@ -7730,11 +7556,11 @@ public class JavaFx extends Application {
         return s == null ? "" : s.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
-    private void addParam(List<String> parts, String key, Object value) {
+    private void addStringParam(List<String> parts, String key, String value) {
         if (value == null) return;
-        String s = value.toString().trim();
+        String s = value.trim();
         if (s.isBlank()) return;
-        parts.add(key + "=" + s.replace(",", "."));
+        parts.add(key + "=" + s);
     }
 
 
@@ -7744,29 +7570,42 @@ public class JavaFx extends Application {
         List<String> parts = new ArrayList<>();
 
         // -----------------------------
-        // aktuelle numerische GUI-Werte lesen
-        // genauso wie in runConcCalculation
+        // aktuelle GUI-Werte lesen
         // -----------------------------
-        double alpha      = parseOrDefault(electronIncidentAngle, 20);
-        double beta       = parseOrDefault(electronTakeoffAngle, 70);
+
+        // String-Parameter
+        String roehreTyp = switch (tubeModel.getValue()) {
+            case "Love & Scott" -> "lovescott";
+            default -> "widerschwinger";
+        };
+
+        String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+        String rFenstMat  = parseOrDefault(windowMaterial, "Be");
+        String dFenstMat  = parseOrDefault(windowMaterialDet, "Be");
+        String kontaktMat = parseOrDefault(contactlayerDet, "Au");
+        String detMat     = parseOrDefault(detectorMaterial, "Si");
+
+        // numerische Parameter
+        double alpha      = parseOrDefault(electronIncidentAngle, 20.0);
+        double beta       = parseOrDefault(electronTakeoffAngle, 70.0);
 
         double sigma      = parseOrDefault(sigmaConst, 1.0314);
         double c2cL       = parseOrDefault(charZuContL, 1.0);
-        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125);
-        double I_A        = parseOrDefault(tubeCurrent, 1.0);
-        double messzeit   = parseOrDefault(measurementTime, 30);
+        double rFenstD_um = parseOrDefault(windowMaterialThickness, 125.0);
+        double I_A        = parseOrDefault(tubeCurrent, 0.01);
+        double messzeit   = parseOrDefault(measurementTime, 30.0);
         double c2c        = parseOrDefault(charZuCont, 1.0);
 
         double dFenst_um  = parseOrDefault(thicknessWindowDet, 7.62);
-        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50);
+        double kontakt_nm = parseOrDefault(contactlayerThicknessDet, 50.0);
         double tots_um    = parseOrDefault(inactiveLayer, 0.05);
         double act_mm     = parseOrDefault(activeLayer, 3.0);
 
         double emax       = parseOrDefault(xRayTubeVoltage, 40.0);
         double step       = parseOrDefault(energieStep, 0.05);
 
-        // optional zusätzliche numerische Default-/GUI-Werte
-        // nur drinlassen, wenn sie für deine Rechnung wirklich relevant sind
+        // feste / aktuell verwendete Werte
+        double emin       = 0.0;
         double fensterW   = 0.0;
         double raumwinkel = 1.0;
         double phiDet     = 0.0;
@@ -7775,9 +7614,18 @@ public class JavaFx extends Application {
         double pbeta      = 45.0;
 
         // -----------------------------
-        // Builder-kompatible Parameternamen verwenden
-        // nur numerische Werte aufnehmen
+        // Builder-kompatible Parameternamen
         // -----------------------------
+
+        // String-Parameter
+        addStringParam(parts, "Röhrentyp", roehreTyp);
+        addStringParam(parts, "Röhrenmaterial", roehrenMat);
+        addStringParam(parts, "FenstermaterialRöhre", rFenstMat);
+        addStringParam(parts, "FenstermaterialDet", dFenstMat);
+        addStringParam(parts, "Kontaktmaterial", kontaktMat);
+        addStringParam(parts, "Detektormaterial", detMat);
+
+        // numerische Parameter
         addNumericParam(parts, "Einfallswinkelalpha", alpha);
         addNumericParam(parts, "Einfallswinkelbeta",  beta);
 
@@ -7785,6 +7633,9 @@ public class JavaFx extends Application {
         addNumericParam(parts, "charzucontL", c2cL);
         addNumericParam(parts, "FensterdickeRöhre", rFenstD_um);
         addNumericParam(parts, "Röhrenstrom", I_A);
+        addNumericParam(parts, "Emin", emin);
+        addNumericParam(parts, "Emax", emax);
+        addNumericParam(parts, "step", step);
         addNumericParam(parts, "messzeit", messzeit);
         addNumericParam(parts, "charzucont", c2c);
 
@@ -7793,7 +7644,6 @@ public class JavaFx extends Application {
         addNumericParam(parts, "Totschicht", tots_um);
         addNumericParam(parts, "activeLayer", act_mm);
 
-        // diese hier nur drinlassen, wenn sie für dich wirklich gesetzt werden sollen
         addNumericParam(parts, "Fensterwinkel", fensterW);
         addNumericParam(parts, "Raumwinkel", raumwinkel);
         addNumericParam(parts, "phiDet", phiDet);
@@ -7801,10 +7651,6 @@ public class JavaFx extends Application {
         addNumericParam(parts, "palphaGrad", palpha);
         addNumericParam(parts, "pbetaGrad", pbeta);
 
-        addNumericParam(parts, "step", step);
-        addNumericParam(parts, "Emax", emax);
-
-        // Basisstring bauen
         String para = String.join(", ", parts);
 
         // alle Optimierungsparameter + ggf. Gegenwinkel entfernen
@@ -7909,59 +7755,6 @@ public class JavaFx extends Application {
 
 
 
-    private List<Probe> buildSelectedProbenForBobyqa() {
-        List<Probe> probes = new ArrayList<>();
-
-        // dieselben aktuellen Werte verwenden wie in der normalen Rechnung
-        double Emin = 0.0; // falls du kein eigenes GUI-Feld dafür hast
-        double Emax = parseOrDefault(xRayTubeVoltage, 40.0);
-        double step = parseOrDefault(energieStep, 0.01);
-
-        for (CalibrationMeasurementRow row : bobyqaMeasurementRows) {
-            if (!row.isSelected()) continue;
-
-            String symbol = safeText(row.getElement());
-            if (symbol.isBlank()) {
-                throw new IllegalArgumentException("Leeres Elementsymbol in einer Messungszeile.");
-            }
-
-            int transition = row.getTransition();
-            if (transition != 0 && transition != 1) {
-                throw new IllegalArgumentException(
-                        "Transition muss 0 (KAlpha) oder 1 (LAlpha) sein. Datei: "
-                                + (row.getSourceFile() == null ? "?" : row.getSourceFile().getFileName())
-                );
-            }
-
-            double intensityDouble = row.getMeasuredIntensity();
-            if (!Double.isFinite(intensityDouble) || intensityDouble <= 0.0) {
-                throw new IllegalArgumentException(
-                        "Ungültige Intensität für " + symbol + ": " + intensityDouble
-                );
-            }
-
-            int intensity = (int) Math.round(intensityDouble);
-
-            List<String> elementSymbole = java.util.List.of(symbol);
-            List<Integer> elementInt = java.util.List.of(intensity);
-
-            Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", Emin, Emax, step, elementInt);
-
-            if (transition == 0) {
-                probe.setzeUebergangAktivFuerElementKAlpha(0);
-            } else {
-                probe.setzeUebergangAktivFuerElementLAlpha(0);
-            }
-
-            probes.add(probe);
-        }
-
-        if (probes.isEmpty()) {
-            throw new IllegalArgumentException("Keine Messungen zur Minimierung ausgewählt.");
-        }
-
-        return probes;
-    }
 
     private void runBobyqaCalibrationAsync() {
         javafx.concurrent.Task<String> task = new javafx.concurrent.Task<>() {
@@ -7972,17 +7765,17 @@ public class JavaFx extends Application {
                 List<Probe> probes = buildSelectedProbenForBobyqa();
 
                 boolean bedingung = chkBobyqaCondition.isSelected();
-
-                // Vollständiger Basis-Parameterstring aus aktueller GUI
                 String para = buildCurrentGuiParameterStringForBobyqa(paraVar, bedingung);
 
-                Kalibrierung kali = new Kalibrierung(null, null);
+                List<Verbindung> activeTubeFilters = getActiveTubeFiltersForBobyqa();
+                List<Verbindung> activeDetFilters  = getActiveDetFiltersForBobyqa();
 
-                // Startwerte bewusst ignorieren -> null
+                Kalibrierung kali = new Kalibrierung(activeTubeFilters, activeDetFilters);
+
                 double[] optimum = kali.kalibrierungNLLS_bobyqa(
                         paraVar,
                         bounds,
-                        null,   // ungenutzt in deinem Code; besser später ganz entfernen
+                        null,
                         probes,
                         bedingung,
                         para,
@@ -8000,7 +7793,7 @@ public class JavaFx extends Application {
                 StringBuilder sb = new StringBuilder();
                 sb.append("BOBYQA finished\n");
                 sb.append("====================================\n");
-                sb.append("Base para string:\n");
+                sb.append("Base para string (cleaned):\n");
                 sb.append(para).append("\n\n");
 
                 sb.append("Optimized parameters:\n");
@@ -8049,15 +7842,848 @@ public class JavaFx extends Application {
     }
 
 
+    private List<Verbindung> getActiveTubeFiltersForBobyqa() {
+        List<Verbindung> activeTubeFilters = new ArrayList<>();
+
+        for (Verbindung v : tubeFilterVerbindungen) {
+            if (tubeFilterUse.getOrDefault(v, Boolean.TRUE)) {
+                activeTubeFilters.add(v);
+            }
+        }
+
+        boolean haveFuncTube = tubeFuncSegs.stream().anyMatch(s -> s.enabled);
+        boolean haveMatTube  = !activeTubeFilters.isEmpty();
+
+        if (!haveMatTube && haveFuncTube) {
+            activeTubeFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+        }
+
+        if (haveFuncTube) {
+            applySegmentsToVerbindungen(activeTubeFilters, tubeFuncSegs, tubeFuncDefault.get());
+        }
+
+        return activeTubeFilters;
+    }
+
+    private List<Verbindung> getActiveDetFiltersForBobyqa() {
+        List<Verbindung> activeDetFilters = new ArrayList<>();
+
+        for (Verbindung v : detFilterVerbindungen) {
+            if (detFilterUse.getOrDefault(v, Boolean.TRUE)) {
+                activeDetFilters.add(v);
+            }
+        }
+
+        boolean haveFuncDet = detFuncSegs.stream().anyMatch(s -> s.enabled);
+        boolean haveMatDet  = !activeDetFilters.isEmpty();
+
+        if (!haveMatDet && haveFuncDet) {
+            activeDetFilters.add(buildVerbindungFromSpec("Al", 2.70, 0.0));
+        }
+
+        if (haveFuncDet) {
+            applySegmentsToVerbindungen(activeDetFilters, detFuncSegs, detFuncDefault.get());
+        }
+
+        return activeDetFilters;
+    }
+
+
+    private TableView<BobyqaFileRow> bobyqaFilesTable;
+    private final ObservableList<BobyqaFileRow> bobyqaFileRows = FXCollections.observableArrayList();
 
 
 
 
+    public static class BobyqaFileRow {
+        private final javafx.beans.property.BooleanProperty selected =
+                new javafx.beans.property.SimpleBooleanProperty(true);
+
+        private final javafx.beans.property.ObjectProperty<java.nio.file.Path> path =
+                new javafx.beans.property.SimpleObjectProperty<>();
+
+        public BobyqaFileRow(java.nio.file.Path path, boolean selected) {
+            this.path.set(path);
+            this.selected.set(selected);
+        }
+
+        public boolean isSelected() { return selected.get(); }
+        public javafx.beans.property.BooleanProperty selectedProperty() { return selected; }
+        public void setSelected(boolean selected) { this.selected.set(selected); }
+
+        public java.nio.file.Path getPath() { return path.get(); }
+        public javafx.beans.property.ObjectProperty<java.nio.file.Path> pathProperty() { return path; }
+        public void setPath(java.nio.file.Path path) { this.path.set(path); }
+    }
 
 
 
 
+    private void syncBobyqaFilesFromConcPaths() {
+        Set<java.nio.file.Path> existing = bobyqaFileRows.stream()
+                .map(BobyqaFileRow::getPath)
+                .collect(Collectors.toSet());
 
+        for (java.nio.file.Path p : concPaths) {
+            if (!existing.contains(p)) {
+                bobyqaFileRows.add(new BobyqaFileRow(p, true));
+            }
+        }
+    }
+
+
+
+
+    private TableView<BobyqaFileRow> buildBobyqaFilesTable() {
+        TableView<BobyqaFileRow> table = new TableView<>(bobyqaFileRows);
+        table.setEditable(true);
+        table.setPrefHeight(220);
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
+        TableColumn<BobyqaFileRow, Boolean> colUse = new TableColumn<>("Use");
+        colUse.setCellValueFactory(c -> c.getValue().selectedProperty());
+        colUse.setCellFactory(CheckBoxTableCell.forTableColumn(colUse));
+        colUse.setEditable(true);
+        colUse.setPrefWidth(60);
+
+        TableColumn<BobyqaFileRow, String> colFile = new TableColumn<>("File");
+        colFile.setCellValueFactory(c -> new javafx.beans.property.SimpleStringProperty(
+                c.getValue().getPath() == null ? "" : c.getValue().getPath().getFileName().toString()
+        ));
+        colFile.setPrefWidth(420);
+
+        table.getColumns().setAll(colUse, colFile);
+
+        // Doppelklick -> vorhandenes Popup öffnen
+        table.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                BobyqaFileRow row = table.getSelectionModel().getSelectedItem();
+                if (row == null || row.getPath() == null) return;
+
+                Window w = table.getScene() != null ? table.getScene().getWindow() : null;
+                openConcPopup(java.util.List.of(row.getPath()), w);
+            }
+        });
+
+        // Externe Dateien per Drag & Drop hinzufügen
+        table.setOnDragOver(ev -> {
+            Dragboard db = ev.getDragboard();
+
+            if (db.hasFiles()) {
+                ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            } else if (db.hasString() && "bobyqa-file-row".equals(db.getString())) {
+                ev.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+            }
+
+            ev.consume();
+        });
+
+        table.setOnDragDropped(ev -> {
+            Dragboard db = ev.getDragboard();
+            boolean success = false;
+
+            // Externe Dateien hinzufügen
+            if (db.hasFiles()) {
+                for (java.io.File f : db.getFiles()) {
+                    String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+                    if (n.endsWith(".asr") || n.endsWith(".fit")) {
+                        java.nio.file.Path p = f.toPath();
+
+                        boolean exists = bobyqaFileRows.stream()
+                                .anyMatch(r -> java.util.Objects.equals(r.getPath(), p));
+
+                        if (!exists) {
+                            bobyqaFileRows.add(new BobyqaFileRow(p, true));
+                        }
+
+                        // optional auch in concPaths aufnehmen
+                        if (!concPaths.contains(p)) {
+                            concPaths.add(p);
+                        }
+                    }
+                }
+                success = true;
+            }
+
+            ev.setDropCompleted(success);
+            ev.consume();
+        });
+
+        // Zeilen intern umsortierbar machen
+        table.setRowFactory(tv -> {
+            TableRow<BobyqaFileRow> row = new TableRow<>();
+
+            row.setOnDragDetected(event -> {
+                if (row.isEmpty()) return;
+
+                bobyqaDraggedRowIndex = row.getIndex();
+
+                Dragboard db = row.startDragAndDrop(javafx.scene.input.TransferMode.MOVE);
+                ClipboardContent cc = new ClipboardContent();
+                cc.putString("bobyqa-file-row");
+                db.setContent(cc);
+                db.setDragView(row.snapshot(null, null));
+
+                event.consume();
+            });
+
+            row.setOnDragOver(event -> {
+                Dragboard db = event.getDragboard();
+                if (db.hasString() && "bobyqa-file-row".equals(db.getString())) {
+                    if (row.getIndex() != bobyqaDraggedRowIndex) {
+                        event.acceptTransferModes(javafx.scene.input.TransferMode.MOVE);
+                    }
+                }
+                event.consume();
+            });
+
+            row.setOnDragDropped(event -> {
+                Dragboard db = event.getDragboard();
+                boolean success = false;
+
+                if (db.hasString() && "bobyqa-file-row".equals(db.getString())) {
+                    if (bobyqaDraggedRowIndex >= 0 && bobyqaDraggedRowIndex < tv.getItems().size()) {
+                        BobyqaFileRow draggedItem = tv.getItems().remove(bobyqaDraggedRowIndex);
+
+                        int dropIndex;
+                        if (row.isEmpty()) {
+                            dropIndex = tv.getItems().size();
+                        } else {
+                            dropIndex = row.getIndex();
+                        }
+
+                        if (dropIndex > bobyqaDraggedRowIndex) {
+                            dropIndex--;
+                        }
+
+                        tv.getItems().add(dropIndex, draggedItem);
+                        tv.getSelectionModel().select(dropIndex);
+                        success = true;
+                    }
+                }
+
+                event.setDropCompleted(success);
+                event.consume();
+            });
+
+            row.setOnDragDone(event -> {
+                bobyqaDraggedRowIndex = -1;
+                event.consume();
+            });
+
+            return row;
+        });
+
+        return table;
+    }
+
+
+
+    private Tab buildBobyqaTab() {
+        initDefaultBobyqaVariables();
+        syncBobyqaFilesFromConcPaths();
+
+        concPaths.addListener((javafx.collections.ListChangeListener<java.nio.file.Path>) c -> {
+            syncBobyqaFilesFromConcPaths();
+        });
+
+        Label title = new Label("BOBYQA Calibration");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
+
+        Label lblAvailable = new Label("Available input files:");
+
+        bobyqaFilesTable = buildBobyqaFilesTable();
+
+        Button btnRemoveFiles = new Button("Remove selected files");
+        btnRemoveFiles.disableProperty().bind(
+                Bindings.isEmpty(bobyqaFilesTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
+        );
+        btnRemoveFiles.setOnAction(e -> {
+            List<BobyqaFileRow> sel = new ArrayList<>(bobyqaFilesTable.getSelectionModel().getSelectedItems());
+            bobyqaFileRows.removeAll(sel);
+        });
+
+        Button btnClearFiles = new Button("Clear file list");
+        btnClearFiles.disableProperty().bind(Bindings.isEmpty(bobyqaFileRows).or(bobyqaRunning));
+        btnClearFiles.setOnAction(e -> bobyqaFileRows.clear());
+
+        HBox fileButtons = new HBox(8, btnRemoveFiles, btnClearFiles);
+        fileButtons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox fileBox = new VBox(8, lblAvailable, bobyqaFilesTable, fileButtons);
+
+        chkBobyqaCondition = new CheckBox("Use angle condition α + β = 90°");
+        chkBobyqaCondition.setSelected(true);
+
+        HBox paramRow = new HBox(10, chkBobyqaCondition);
+        paramRow.setAlignment(Pos.CENTER_LEFT);
+
+        Label lblVars = new Label("Optimization variables:");
+
+        bobyqaVarTable = buildBobyqaVarTable();
+
+        Button btnAddVar = new Button("Choose variables...");
+        btnAddVar.disableProperty().bind(bobyqaRunning);
+        btnAddVar.setOnAction(e -> {
+            Window w = bobyqaVarTable.getScene() != null ? bobyqaVarTable.getScene().getWindow() : null;
+            openBobyqaVariableSelectionPopup(w);
+        });
+
+        Button btnRemoveVar = new Button("Remove selected variable rows");
+        btnRemoveVar.disableProperty().bind(
+                Bindings.isEmpty(bobyqaVarTable.getSelectionModel().getSelectedItems()).or(bobyqaRunning)
+        );
+        btnRemoveVar.setOnAction(e -> {
+            List<OptimizationVarRow> sel = new ArrayList<>(bobyqaVarTable.getSelectionModel().getSelectedItems());
+            bobyqaVarRows.removeAll(sel);
+        });
+
+        HBox varButtons = new HBox(8, btnAddVar, btnRemoveVar);
+        varButtons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox varBox = new VBox(8, lblVars, bobyqaVarTable, varButtons);
+
+        Button btnRunBobyqa = new Button("Run BOBYQA Minimization");
+        btnRunBobyqa.disableProperty().bind(
+                bobyqaRunning
+                        .or(Bindings.isEmpty(bobyqaFileRows))
+                        .or(Bindings.isEmpty(bobyqaVarRows))
+        );
+        btnRunBobyqa.setOnAction(e -> {
+            try {
+                List<String[]> paraVar = buildSelectedParaVar();
+
+                if (paraVar.size() == 1) {
+                    showError(
+                            "BOBYQA Minimization",
+                            "BOBYQA cannot be run with only one optimization parameter in this implementation. Please select at least two parameters."
+                    );
+                    return;
+                }
+
+                runBobyqaCalibrationAsync();
+
+            } catch (Exception ex) {
+                showError(
+                        "BOBYQA Minimization",
+                        ex.getMessage() == null ? "An unknown error occurred." : ex.getMessage()
+                );
+            }
+        });
+
+        bobyqaOutputArea = new TextArea();
+        bobyqaOutputArea.setEditable(false);
+        bobyqaOutputArea.setWrapText(false);
+        bobyqaOutputArea.setPrefRowCount(16);
+
+        VBox outputBox = new VBox(8, btnRunBobyqa, new Label("Output:"), bobyqaOutputArea);
+
+        VBox content = new VBox(
+                12,
+                title,
+                new Separator(),
+                fileBox,
+                new Separator(),
+                paramRow,
+                varBox,
+                outputBox
+        );
+        content.setPadding(new Insets(14));
+
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+
+        return new Tab("BOBYQA", scrollPane);
+    }
+
+
+
+
+    private List<Probe> buildSelectedProbenForBobyqa() {
+        List<Probe> probes = new ArrayList<>();
+
+        // dieselben aktuellen Werte verwenden wie in der normalen Rechnung
+        double Emin = 0.05;
+        double Emax = parseOrDefault(xRayTubeVoltage, 40.0);
+        double step = parseOrDefault(energieStep, 0.05);
+
+        List<BobyqaFileRow> selectedFiles = bobyqaFileRows.stream()
+                .filter(BobyqaFileRow::isSelected)
+                .toList();
+
+        if (selectedFiles.isEmpty()) {
+            throw new IllegalArgumentException("Keine Dateien für die Minimierung ausgewählt.");
+        }
+
+        for (BobyqaFileRow fileRow : selectedFiles) {
+            java.nio.file.Path path = fileRow.getPath();
+            if (path == null) continue;
+
+            javafx.collections.ObservableList<ConcRow> rows = getOrBuildRowsForFile(path);
+
+            for (ConcRow row : rows) {
+                if (row == null) continue;
+                if (!row.enabled.get()) continue;
+
+                String symbol = safeText(row.element.get());
+                if (symbol.isBlank()) continue;
+
+                String trans = safeText(row.transition.get()).toUpperCase(java.util.Locale.ROOT);
+                int transition;
+                if (trans.equals("K")) transition = 0;
+                else if (trans.equals("L")) transition = 1;
+                else {
+                    throw new IllegalArgumentException(
+                            "Unbekannter Übergang '" + row.transition.get() + "' in Datei " + path.getFileName()
+                    );
+                }
+
+                double intensityDouble = row.intensity.get();
+                if (!Double.isFinite(intensityDouble) || intensityDouble <= 0.0) {
+                    continue;
+                }
+
+                int intensity = (int) Math.round(intensityDouble);
+
+                List<String> elementSymbole = java.util.List.of(symbol);
+                List<Integer> elementInt = java.util.List.of(intensity);
+
+                Probe probe = new Probe(elementSymbole, "MCMASTER.TXT", Emin, Emax, step, elementInt);
+
+                if (transition == 0) {
+                    probe.setzeUebergangAktivFuerElementKAlpha(0);
+                } else {
+                    probe.setzeUebergangAktivFuerElementLAlpha(0);
+                }
+
+                probes.add(probe);
+            }
+        }
+
+        if (probes.isEmpty()) {
+            throw new IllegalArgumentException("Keine aktivierten Peaks in den ausgewählten Dateien gefunden.");
+        }
+
+        return probes;
+    }
+
+    private int bobyqaDraggedRowIndex = -1;
+
+
+
+// ============================================================
+// NEUE DATENKLASSE FÜR DAS POPUP
+// ============================================================
+
+    public static class BobyqaVariableChoiceRow {
+        private final javafx.beans.property.BooleanProperty selected =
+                new javafx.beans.property.SimpleBooleanProperty(false);
+
+        // Anzeigename im Popup
+        private final javafx.beans.property.StringProperty displayName =
+                new javafx.beans.property.SimpleStringProperty("");
+
+        // Interner Name für para / Builder
+        private final javafx.beans.property.StringProperty variableName =
+                new javafx.beans.property.SimpleStringProperty("");
+
+        private final javafx.beans.property.DoubleProperty lowerBound =
+                new javafx.beans.property.SimpleDoubleProperty(0.0);
+
+        private final javafx.beans.property.DoubleProperty upperBound =
+                new javafx.beans.property.SimpleDoubleProperty(1.0);
+
+        public BobyqaVariableChoiceRow(String displayName, String variableName, double lowerBound, double upperBound, boolean selected) {
+            this.displayName.set(displayName);
+            this.variableName.set(variableName);
+            this.lowerBound.set(lowerBound);
+            this.upperBound.set(upperBound);
+            this.selected.set(selected);
+        }
+
+        public boolean isSelected() {
+            return selected.get();
+        }
+
+        public javafx.beans.property.BooleanProperty selectedProperty() {
+            return selected;
+        }
+
+        public void setSelected(boolean selected) {
+            this.selected.set(selected);
+        }
+
+        public String getDisplayName() {
+            return displayName.get();
+        }
+
+        public javafx.beans.property.StringProperty displayNameProperty() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName.set(displayName);
+        }
+
+        public String getVariableName() {
+            return variableName.get();
+        }
+
+        public javafx.beans.property.StringProperty variableNameProperty() {
+            return variableName;
+        }
+
+        public void setVariableName(String variableName) {
+            this.variableName.set(variableName);
+        }
+
+        public double getLowerBound() {
+            return lowerBound.get();
+        }
+
+        public javafx.beans.property.DoubleProperty lowerBoundProperty() {
+            return lowerBound;
+        }
+
+        public void setLowerBound(double lowerBound) {
+            this.lowerBound.set(lowerBound);
+        }
+
+        public double getUpperBound() {
+            return upperBound.get();
+        }
+
+        public javafx.beans.property.DoubleProperty upperBoundProperty() {
+            return upperBound;
+        }
+
+        public void setUpperBound(double upperBound) {
+            this.upperBound.set(upperBound);
+        }
+    }
+
+    private List<BobyqaVariableChoiceRow> createAvailableBobyqaVariableChoices() {
+        List<BobyqaVariableChoiceRow> rows = new ArrayList<>();
+
+        rows.add(new BobyqaVariableChoiceRow("Incident angle alpha", "Einfallswinkelalpha", 19.0, 21.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Takeoff angle beta", "Einfallswinkelbeta", 69.0, 71.0, false));
+
+        rows.add(new BobyqaVariableChoiceRow("Sigma", "sigma", 0.8, 1.0314, false));
+        rows.add(new BobyqaVariableChoiceRow("Char-to-continuum L", "charzucontL", 0.1, 1.2, false));
+        rows.add(new BobyqaVariableChoiceRow("Tube window thickness", "FensterdickeRöhre", 50.0, 200.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Tube current", "Röhrenstrom", 0.001, 1.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Measurement time", "messzeit", 1.0, 1000.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Char-to-continuum", "charzucont", 0.8, 1.1, false));
+
+        rows.add(new BobyqaVariableChoiceRow("Detector window thickness", "FensterdickeDet", 1.0, 30.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Contact layer thickness", "Kontaktmaterialdicke", 1.0, 100.0, false));
+        rows.add(new BobyqaVariableChoiceRow("Dead layer", "Totschicht", 0.0, 0.2, false));
+        rows.add(new BobyqaVariableChoiceRow("Active layer", "activeLayer", 2.0, 4.0, false));
+
+        //rows.add(new BobyqaVariableChoiceRow("Window angle", "Fensterwinkel", 0.0, 90.0, false));
+        //rows.add(new BobyqaVariableChoiceRow("Solid angle", "Raumwinkel", 0.01, 10.0, false));
+        //rows.add(new BobyqaVariableChoiceRow("Detector phi", "phiDet", 0.0, 360.0, false));
+        //rows.add(new BobyqaVariableChoiceRow("Coverage factor", "Bedeckungsfaktor", 0.0, 1.0, false));
+        //rows.add(new BobyqaVariableChoiceRow("P alpha angle", "palphaGrad", 0.0, 90.0, false));
+        //rows.add(new BobyqaVariableChoiceRow("P beta angle", "pbetaGrad", 0.0, 90.0, false));
+
+        rows.add(new BobyqaVariableChoiceRow("Tube voltage / Emax", "Emax", 1.0, 100.0, false));
+
+        Map<String, OptimizationVarRow> existing = bobyqaVarRows.stream()
+                .collect(Collectors.toMap(
+                        r -> normalizeParaKey(r.getVariableName()),
+                        r -> r,
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
+
+        for (BobyqaVariableChoiceRow row : rows) {
+            OptimizationVarRow ex = existing.get(normalizeParaKey(row.getVariableName()));
+            if (ex != null) {
+                row.setSelected(true);
+                row.setLowerBound(ex.getLowerBound());
+                row.setUpperBound(ex.getUpperBound());
+            }
+        }
+
+        return rows;
+    }
+
+// ============================================================
+// POPUP ZUM AUSWÄHLEN DER VARIABLEN
+// ============================================================
+
+    private void openBobyqaVariableSelectionPopup(Window owner) {
+        Stage popup = new Stage();
+        popup.setTitle("BOBYQA Variablen auswählen");
+        if (owner != null) {
+            popup.initOwner(owner);
+        }
+        popup.initModality(Modality.APPLICATION_MODAL);
+        popup.setAlwaysOnTop(true);
+
+        ObservableList<BobyqaVariableChoiceRow> rows =
+                javafx.collections.FXCollections.observableArrayList(createAvailableBobyqaVariableChoices());
+
+        TableView<BobyqaVariableChoiceRow> table = new TableView<>(rows);
+        table.setEditable(true);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        table.setPrefHeight(500);
+
+        TableColumn<BobyqaVariableChoiceRow, Boolean> cUse = new TableColumn<>("Use");
+        cUse.setCellValueFactory(data -> data.getValue().selectedProperty());
+        cUse.setCellFactory(CheckBoxTableCell.forTableColumn(cUse));
+        cUse.setEditable(true);
+        cUse.setPrefWidth(70);
+
+        TableColumn<BobyqaVariableChoiceRow, String> cVar = new TableColumn<>("Variable");
+        cVar.setCellValueFactory(data -> data.getValue().displayNameProperty());
+        cVar.setEditable(false);
+        cVar.setPrefWidth(240);
+
+        TableColumn<BobyqaVariableChoiceRow, Number> cLow = new TableColumn<>("Lower");
+        cLow.setCellValueFactory(data -> data.getValue().lowerBoundProperty());
+        cLow.setCellFactory(tc -> new EditingDoubleCell<>());
+        cLow.setOnEditCommit(ev -> ev.getRowValue().setLowerBound(ev.getNewValue().doubleValue()));
+        cLow.setEditable(true);
+        cLow.setPrefWidth(120);
+
+        TableColumn<BobyqaVariableChoiceRow, Number> cUp = new TableColumn<>("Upper");
+        cUp.setCellValueFactory(data -> data.getValue().upperBoundProperty());
+        cUp.setCellFactory(tc -> new EditingDoubleCell<>());
+        cUp.setOnEditCommit(ev -> ev.getRowValue().setUpperBound(ev.getNewValue().doubleValue()));
+        cUp.setEditable(true);
+        cUp.setPrefWidth(120);
+
+        table.getColumns().setAll(cUse, cVar, cLow, cUp);
+
+        Button btnAll = new Button("All");
+        btnAll.setOnAction(e -> {
+            for (BobyqaVariableChoiceRow r : rows) {
+                r.setSelected(true);
+            }
+        });
+
+        Button btnNone = new Button("None");
+        btnNone.setOnAction(e -> {
+            for (BobyqaVariableChoiceRow r : rows) {
+                r.setSelected(false);
+            }
+        });
+
+        Button btnOk = new Button("Apply");
+        btnOk.setDefaultButton(true);
+        btnOk.setOnAction(e -> {
+            List<OptimizationVarRow> selected = new ArrayList<>();
+
+            for (BobyqaVariableChoiceRow r : rows) {
+                if (!r.isSelected()) {
+                    continue;
+                }
+
+                if (!(r.getLowerBound() < r.getUpperBound())) {
+                    showError("Ungültige Grenzen",
+                            "Lower >= Upper bei Variable: " + r.getVariableName());
+                    return;
+                }
+
+                selected.add(new OptimizationVarRow(
+                        r.getVariableName(),
+                        r.getLowerBound(),
+                        r.getUpperBound()
+                ));
+            }
+
+            bobyqaVarRows.setAll(selected);
+            popup.close();
+        });
+
+        Button btnCancel = new Button("Cancel");
+        btnCancel.setCancelButton(true);
+        btnCancel.setOnAction(e -> popup.close());
+
+        HBox buttons = new HBox(
+                8,
+                btnAll,
+                btnNone,
+                new Separator(Orientation.VERTICAL),
+                btnOk,
+                btnCancel
+        );
+        buttons.setAlignment(Pos.CENTER_LEFT);
+
+        VBox root = new VBox(10, table, buttons);
+        root.setPadding(new Insets(12));
+        VBox.setVgrow(table, Priority.ALWAYS);
+
+        Scene scene = new Scene(root, 620, 560);
+        popup.setScene(scene);
+        popup.showAndWait();
+    }
+
+
+
+    private Verbindung createRoehrenMaterialForTest(String roehrenMat,
+                                                    double Emin,
+                                                    double Emax,
+                                                    double step,
+                                                    String dateiPfad) {
+        Funktionen f = new FunktionenImpl();
+        return f.parseVerbindung(roehrenMat, Emin, Emax, step, dateiPfad);
+    }
+
+
+    private Tab createPTestTab() {
+        Tab tab = new Tab("p-Test");
+        tab.setClosable(false);
+
+        Label zVonLabel = new Label("Z von:");
+        TextField zVonField = new TextField("5");
+
+        Label zBisLabel = new Label("Z bis:");
+        TextField zBisField = new TextField("30");
+
+        Button berechnenButton = new Button("Berechne");
+
+        TextArea outputArea = new TextArea();
+        outputArea.setEditable(false);
+        outputArea.setWrapText(true);
+        outputArea.setPrefRowCount(24);
+
+        GridPane inputGrid = new GridPane();
+        inputGrid.setHgap(10);
+        inputGrid.setVgap(10);
+
+        inputGrid.add(zVonLabel, 0, 0);
+        inputGrid.add(zVonField, 1, 0);
+
+        inputGrid.add(zBisLabel, 0, 1);
+        inputGrid.add(zBisField, 1, 1);
+
+        inputGrid.add(berechnenButton, 0, 2, 2, 1);
+
+        berechnenButton.setOnAction(e -> {
+            try {
+                double Emin = 0.0;
+                double Emax = parseOrDefault(xRayTubeVoltage, 35.0);
+                double step = parseOrDefault(energieStep, 0.01);
+                String dateiPfad = DATA_FILE;
+
+                String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
+
+                int zVon = Integer.parseInt(zVonField.getText().trim());
+                int zBis = Integer.parseInt(zBisField.getText().trim());
+
+                if (zVon > zBis) {
+                    int tmp = zVon;
+                    zVon = zBis;
+                    zBis = tmp;
+                }
+
+                // feste Streuwinkel wie in deinem anderen Code
+                double palpha = 45.0;
+                double pbeta  = 45.0;
+
+                Verbindung roehrenMaterial = createRoehrenMaterialForTest(
+                        roehrenMat,
+                        Emin,
+                        Emax,
+                        step,
+                        dateiPfad
+                );
+
+                double eCharKeV = roehrenMaterial.getCharakteristischeUebergangsenergieKAlphaKeV();
+
+                // gestreute Compton-Energie
+                double eCompKeV = eCharKeV / (
+                        1.0 + (eCharKeV / 511.0) * (1 - Math.cos(Math.toRadians(palpha + pbeta)))
+                );
+
+                // Wellenlängen
+                double lambdaCharAngstrom = 12.398 / eCharKeV;
+                double lambdaCompAngstrom = 12.398 / eCompKeV;
+
+                // p für elastische Streuung mit E_char
+                double winkelDeg = (palpha + pbeta) / 2.0;
+                double winkelRad = Math.toRadians(winkelDeg);
+                double pElastic = Math.sin(winkelRad) / lambdaCharAngstrom;
+
+                // p für Compton mit E_comp
+                double pComp = Math.sin(winkelRad) / lambdaCompAngstrom;
+
+                // P-Faktor für den Spezialfall Θ = 90°
+                // Hier ist a = E' / 511 keV mit E' = Compton-Energie.
+                // Diese Formel gilt nur für Θ = 90°, also hier nur passend,
+                // wenn palpha + pbeta = 90° ist (z.B. 45° + 45°).
+                double alphaRel = eCompKeV / 511.0;
+                double p90 = (1.0 + alphaRel + alphaRel * alphaRel)
+                        / Math.pow(1.0 + alphaRel, 3.0);
+
+                // Detektoreffizienz direkt bei den beiden Energien
+                Detektor det = buildDetectorFromUI();
+                double detEffRay = det.detektoreffizienz(eCharKeV);
+                double detEffComp = det.detektoreffizienz(eCompKeV);
+                double detEffQuot = detEffComp / detEffRay;
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("Röhrenmaterialname: ").append(roehrenMat).append("\n");
+
+                sb.append("E_Kα [keV]       = ").append(eCharKeV).append("\n");
+                sb.append("E_Comp [keV]     = ").append(eCompKeV).append("\n");
+                sb.append("λ_char [Å]       = ").append(lambdaCharAngstrom).append("\n");
+                sb.append("λ_comp [Å]       = ").append(lambdaCompAngstrom).append("\n");
+                sb.append("palpha [°]       = ").append(palpha).append("\n");
+                sb.append("pbeta [°]        = ").append(pbeta).append("\n");
+                sb.append("(α+β)/2 [°]      = ").append(winkelDeg).append("\n");
+                sb.append("p_elastisch [1/Å]= ").append(pElastic).append("\n");
+                sb.append("p_compton [1/Å]  = ").append(pComp).append("\n");
+                sb.append("P(Θ=90°)         = ").append(p90).append("\n");
+                sb.append("DetEff(E_Ray)    = ").append(detEffRay).append("\n");
+                sb.append("DetEff(E_Comp)   = ").append(detEffComp).append("\n");
+                sb.append("DetEffQuot       = ").append(detEffQuot).append("\n\n");
+
+                sb.append("Z-Bereich        = ").append(zVon).append(" bis ").append(zBis).append("\n");
+                sb.append("------------------------------------------------------------\n");
+                sb.append(String.format("%-4s %-6s %-14s %-14s %-14s %-14s %-14s%n",
+                        "Z", "El", "mu(E_Ray)", "mu(E_Comp)", "F(Z)^2", "S(Z)", "R(Z)"));
+
+                for (int z = zVon; z <= zBis; z++) {
+                    String elementString = String.valueOf(z);
+                    Element element = new Element(dateiPfad, elementString, Emin, Emax, step);
+
+                    double muRay = element.massenschwächungskoeffizientEnergie(eCharKeV);
+                    double muComp = element.massenschwächungskoeffizientEnergie(eCompKeV);
+
+                    double muFactor = (muComp + muRay) / (2.0 * muRay);
+
+                    double f = AtomicFormFactorCalculator.F(z, pElastic);
+                    double f2 = f * f;
+                    double s = IncoherentScatteringCalculator.S(z, pComp);
+
+                    double r = p90
+                            * detEffQuot
+                            * muFactor
+                            * (s / f2);
+
+                    sb.append(String.format(java.util.Locale.US,
+                            "%-4d %-6s %-14.6f %-14.6f %-14.6f %-14.6f %-14.6f%n",
+                            z, element.getSymbol(), muRay, muComp, f2, s, r));
+                }
+
+                outputArea.setText(sb.toString());
+
+            } catch (Exception ex) {
+                outputArea.setText("Fehler bei Berechnung:\n" + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+
+        VBox root = new VBox(12, inputGrid, outputArea);
+        root.setPadding(new Insets(15));
+
+        tab.setContent(root);
+        return tab;
+    }
 
 
 

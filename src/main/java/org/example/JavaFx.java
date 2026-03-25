@@ -36,7 +36,20 @@ import javafx.stage.Window;
 import javafx.css.PseudoClass;
 
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Polygon;
+import javafx.scene.shape.Rectangle;
 import javafx.util.Duration;
+import org.hipparchus.linear.Array2DRowRealMatrix;
+import org.hipparchus.linear.ArrayRealVector;
+import org.hipparchus.linear.RealMatrix;
+import org.hipparchus.linear.RealVector;
+import org.hipparchus.optim.SimpleVectorValueChecker;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresBuilder;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresOptimizer;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LeastSquaresProblem;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.LevenbergMarquardtOptimizer;
+import org.hipparchus.optim.nonlinear.vector.leastsquares.MultivariateJacobianFunction;
+import org.hipparchus.util.Pair;
 
 // JSON (Jackson)
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -100,6 +113,10 @@ public class JavaFx extends Application {
     private TextField detectorMaterial;
     private TextField inactiveLayer;           // in µm
     private TextField activeLayer;          // in mm
+
+    private TextField pTestManualAField;
+    private TextField pTestManualBField;
+    private TextField pTestManualRField;
 
 
 
@@ -185,7 +202,7 @@ public class JavaFx extends Application {
         about.setOnAction(e -> new Alert(Alert.AlertType.INFORMATION, "JavaFX Demo\n© 2025").showAndWait());
         helpMenu.getItems().add(about);
 
-        MenuBar menuBar = new MenuBar(fileMenu, viewMenu, helpMenu);
+        MenuBar menuBar = new MenuBar(fileMenu, viewMenu);
 
 
 
@@ -201,6 +218,7 @@ public class JavaFx extends Application {
                 buildFunctionFiltersTab(),
                 buildConcentrationsTab(),
                 buildSpectraTab(),
+                buildNetAreaTab(),
                 buildBobyqaTab(),
                 createPTestTab()
         );
@@ -2438,6 +2456,16 @@ public class JavaFx extends Application {
         // Flags
         Boolean autoLoadLast;
 
+        // p-Test own function
+        Double pTestManualA, pTestManualB, pTestManualR;
+
+        // Spectra calibration
+        Double spectraCalA0, spectraCalA1, spectraCalA2;
+
+        // NetArea inputs
+        Double netAreaRange1, netAreaRange2, netAreaRange3;
+        Double netAreaCalA0, netAreaCalA1, netAreaCalA2;
+
 
         static AppSettings fromUI(JavaFx ui) {
             AppSettings s = new AppSettings();
@@ -2476,6 +2504,19 @@ public class JavaFx extends Application {
 
             // Flag
             s.autoLoadLast = ui.chkAutoLoadLast.isSelected();
+
+            s.pTestManualA = readDoubleOrNull(ui.pTestManualAField);
+            s.pTestManualB = readDoubleOrNull(ui.pTestManualBField);
+            s.pTestManualR = readDoubleOrNull(ui.pTestManualRField);
+            s.spectraCalA0 = readDoubleOrNull(ui.calA0Field);
+            s.spectraCalA1 = readDoubleOrNull(ui.calA1Field);
+            s.spectraCalA2 = readDoubleOrNull(ui.calA2Field);
+            s.netAreaRange1 = readDoubleOrNull(ui.netAreaRange1Field);
+            s.netAreaRange2 = readDoubleOrNull(ui.netAreaRange2Field);
+            s.netAreaRange3 = readDoubleOrNull(ui.netAreaRange3Field);
+            s.netAreaCalA0 = readDoubleOrNull(ui.netAreaA0Field);
+            s.netAreaCalA1 = readDoubleOrNull(ui.netAreaA1Field);
+            s.netAreaCalA2 = readDoubleOrNull(ui.netAreaA2Field);
 
 
             // --- Material-Filter (Tube) exportieren ---
@@ -2573,6 +2614,19 @@ public class JavaFx extends Application {
             ui.detFuncDefault.set(safeOr(ui.detFuncDefault.get(),  detFuncDefault,  1.0));
 
             ui.chkAutoLoadLast.setSelected(Boolean.TRUE.equals(autoLoadLast));
+
+            if (ui.pTestManualAField != null) ui.pTestManualAField.setText(doubleToStr(pTestManualA));
+            if (ui.pTestManualBField != null) ui.pTestManualBField.setText(doubleToStr(pTestManualB));
+            if (ui.pTestManualRField != null) ui.pTestManualRField.setText(doubleToStr(pTestManualR));
+            if (ui.calA0Field != null) ui.calA0Field.setText(doubleToStr(spectraCalA0));
+            if (ui.calA1Field != null) ui.calA1Field.setText(doubleToStr(spectraCalA1));
+            if (ui.calA2Field != null) ui.calA2Field.setText(doubleToStr(spectraCalA2));
+            if (ui.netAreaRange1Field != null) ui.netAreaRange1Field.setText(doubleToStr(netAreaRange1));
+            if (ui.netAreaRange2Field != null) ui.netAreaRange2Field.setText(doubleToStr(netAreaRange2));
+            if (ui.netAreaRange3Field != null) ui.netAreaRange3Field.setText(doubleToStr(netAreaRange3));
+            if (ui.netAreaA0Field != null) ui.netAreaA0Field.setText(doubleToStr(netAreaCalA0));
+            if (ui.netAreaA1Field != null) ui.netAreaA1Field.setText(doubleToStr(netAreaCalA1));
+            if (ui.netAreaA2Field != null) ui.netAreaA2Field.setText(doubleToStr(netAreaCalA2));
 
 
 
@@ -2708,6 +2762,18 @@ public class JavaFx extends Application {
 
         putMaybeDouble(node, "tubeFuncDefault", s.tubeFuncDefault);
         putMaybeDouble(node, "detFuncDefault",  s.detFuncDefault);
+        putMaybeDouble(node, "pTestManualA", s.pTestManualA);
+        putMaybeDouble(node, "pTestManualB", s.pTestManualB);
+        putMaybeDouble(node, "pTestManualR", s.pTestManualR);
+        putMaybeDouble(node, "spectraCalA0", s.spectraCalA0);
+        putMaybeDouble(node, "spectraCalA1", s.spectraCalA1);
+        putMaybeDouble(node, "spectraCalA2", s.spectraCalA2);
+        putMaybeDouble(node, "netAreaRange1", s.netAreaRange1);
+        putMaybeDouble(node, "netAreaRange2", s.netAreaRange2);
+        putMaybeDouble(node, "netAreaRange3", s.netAreaRange3);
+        putMaybeDouble(node, "netAreaCalA0", s.netAreaCalA0);
+        putMaybeDouble(node, "netAreaCalA1", s.netAreaCalA1);
+        putMaybeDouble(node, "netAreaCalA2", s.netAreaCalA2);
 
         node.putBoolean("autoLoadLast", s.autoLoadLast != null && s.autoLoadLast);
 
@@ -2829,6 +2895,18 @@ public class JavaFx extends Application {
 
         s.tubeFuncDefault = getMaybeDouble(node, "tubeFuncDefault");
         s.detFuncDefault  = getMaybeDouble(node, "detFuncDefault");
+        s.pTestManualA    = getMaybeDouble(node, "pTestManualA");
+        s.pTestManualB    = getMaybeDouble(node, "pTestManualB");
+        s.pTestManualR    = getMaybeDouble(node, "pTestManualR");
+        s.spectraCalA0    = getMaybeDouble(node, "spectraCalA0");
+        s.spectraCalA1    = getMaybeDouble(node, "spectraCalA1");
+        s.spectraCalA2    = getMaybeDouble(node, "spectraCalA2");
+        s.netAreaRange1   = getMaybeDouble(node, "netAreaRange1");
+        s.netAreaRange2   = getMaybeDouble(node, "netAreaRange2");
+        s.netAreaRange3   = getMaybeDouble(node, "netAreaRange3");
+        s.netAreaCalA0    = getMaybeDouble(node, "netAreaCalA0");
+        s.netAreaCalA1    = getMaybeDouble(node, "netAreaCalA1");
+        s.netAreaCalA2    = getMaybeDouble(node, "netAreaCalA2");
 
         s.autoLoadLast = node.getBoolean("autoLoadLast", false);
 
@@ -6767,6 +6845,12 @@ public class JavaFx extends Application {
     private TextField calA0Field;
     private TextField calA1Field;
     private TextField calA2Field;
+    private TextField netAreaRange1Field;
+    private TextField netAreaRange2Field;
+    private TextField netAreaRange3Field;
+    private TextField netAreaA0Field;
+    private TextField netAreaA1Field;
+    private TextField netAreaA2Field;
 
     private Button axisModeButton;
 
@@ -7197,6 +7281,585 @@ public class JavaFx extends Application {
         tab.setContent(content);
 
         return tab;
+    }
+
+    private Tab buildNetAreaTab() {
+        Label title = new Label("SPE NetArea");
+        title.setStyle("-fx-font-weight: bold; -fx-font-size: 14;");
+        BooleanProperty netAreaEnergyMode = new SimpleBooleanProperty(false);
+
+        ListView<java.nio.file.Path> list = new ListView<>(spePaths);
+        list.setFixedCellSize(28);
+        list.setPrefHeight(6 * list.getFixedCellSize() + 4);
+        list.setMaxHeight(Region.USE_PREF_SIZE);
+        list.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        list.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        });
+        list.setOnDragOver(ev -> {
+            if (ev.getDragboard().hasFiles()) {
+                ev.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+            }
+            ev.consume();
+        });
+        list.setOnDragDropped(ev -> {
+            var db = ev.getDragboard();
+            boolean success = false;
+            if (db.hasFiles()) {
+                boolean addedAny = false;
+                for (java.io.File f : db.getFiles()) {
+                    try {
+                        java.nio.file.Path finalPath = normalizeToSpePath(f.toPath());
+                        if (!spePaths.contains(finalPath)) {
+                            spePaths.add(finalPath);
+                            addedAny = true;
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+                success = addedAny;
+            }
+            ev.setDropCompleted(success);
+            ev.consume();
+        });
+
+        Button btnAdd = new Button("Add...");
+        btnAdd.setOnAction(e -> {
+            var fc = new javafx.stage.FileChooser();
+            fc.setTitle("SPE-Dateien waehlen");
+            fc.getExtensionFilters().addAll(
+                    new javafx.stage.FileChooser.ExtensionFilter("SPE und Tracor", "*.spe", "*.SPE", "*.*"),
+                    new javafx.stage.FileChooser.ExtensionFilter("Alle Dateien", "*.*")
+            );
+
+            var owner = list.getScene() != null ? list.getScene().getWindow() : null;
+            var chosen = fc.showOpenMultipleDialog(owner);
+            if (chosen != null) {
+                for (var f : chosen) {
+                    addSpectrumFile(f.toPath());
+                }
+            }
+        });
+
+        Button btnRemove = new Button("Remove");
+        btnRemove.disableProperty().bind(Bindings.isEmpty(list.getSelectionModel().getSelectedItems()));
+        btnRemove.setOnAction(e -> {
+            var sel = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            spePaths.removeAll(sel);
+        });
+
+        Button btnClear = new Button("Clear");
+        btnClear.disableProperty().bind(Bindings.isEmpty(spePaths));
+        btnClear.setOnAction(e -> spePaths.clear());
+
+        HBox controls = new HBox(8, btnAdd, btnRemove, btnClear);
+        controls.setAlignment(Pos.CENTER_LEFT);
+
+        Label netSelLbl = new Label("SPE-Selection:");
+        ComboBox<java.nio.file.Path> netAreaFileCombo = new ComboBox<>(spePaths);
+        javafx.util.Callback<ListView<java.nio.file.Path>, ListCell<java.nio.file.Path>> pathCellFactory = lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(java.nio.file.Path p, boolean empty) {
+                super.updateItem(p, empty);
+                setText(empty || p == null ? null : p.getFileName().toString());
+            }
+        };
+        netAreaFileCombo.setCellFactory(pathCellFactory);
+        netAreaFileCombo.setButtonCell(pathCellFactory.call(null));
+        netAreaFileCombo.setPrefWidth(320);
+        netAreaFileCombo.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                list.getSelectionModel().clearSelection();
+                list.getSelectionModel().select(newVal);
+                list.scrollTo(newVal);
+            }
+        });
+        list.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && netAreaFileCombo.getValue() != newVal) {
+                netAreaFileCombo.setValue(newVal);
+            }
+        });
+        HBox selectionRow = new HBox(8, netSelLbl, netAreaFileCombo);
+        selectionRow.setAlignment(Pos.CENTER_LEFT);
+
+        netAreaRange1Field = new TextField();
+        netAreaRange1Field.setPrefWidth(80);
+        netAreaRange1Field.setPromptText("Area 1");
+
+        netAreaRange2Field = new TextField();
+        netAreaRange2Field.setPrefWidth(80);
+        netAreaRange2Field.setPromptText("Area 2");
+
+        netAreaRange3Field = new TextField();
+        netAreaRange3Field.setPrefWidth(80);
+        netAreaRange3Field.setPromptText("Area 3");
+
+        Button netAreaAxisModeButton = new Button("Channel");
+        netAreaA0Field = new TextField("0.0");
+        netAreaA0Field.setPrefWidth(80);
+        netAreaA1Field = new TextField("0.02");
+        netAreaA1Field.setPrefWidth(80);
+        netAreaA2Field = new TextField("0.0");
+        netAreaA2Field.setPrefWidth(80);
+
+        Runnable updateRangePrompts = () -> {
+            String unit = netAreaEnergyMode.get() ? "keV" : "ch";
+            netAreaRange1Field.setPromptText("Area 1 [" + unit + "]");
+            netAreaRange2Field.setPromptText("Area 2 [" + unit + "]");
+            netAreaRange3Field.setPromptText("Area 3 [" + unit + "]");
+        };
+        updateRangePrompts.run();
+
+        HBox rangeBox = new HBox(
+                8,
+                new Label("Area 1:"),
+                netAreaRange1Field,
+                new Label("Area 2:"),
+                netAreaRange2Field,
+                new Label("Area 3:"),
+                netAreaRange3Field
+        );
+        rangeBox.setAlignment(Pos.CENTER_LEFT);
+
+        HBox calibrationRow = new HBox(
+                6,
+                netAreaAxisModeButton,
+                new Label("E ="),
+                netAreaA0Field,
+                new Label("+"),
+                netAreaA1Field,
+                new Label("· ch +"),
+                netAreaA2Field,
+                new Label("· ch²")
+        );
+        calibrationRow.setAlignment(Pos.CENTER_LEFT);
+
+        Runnable convertRangeFields = () -> {
+            convertRangeField(netAreaRange1Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+            convertRangeField(netAreaRange2Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+            convertRangeField(netAreaRange3Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+            updateRangePrompts.run();
+        };
+        netAreaAxisModeButton.setOnAction(e -> {
+            netAreaEnergyMode.set(!netAreaEnergyMode.get());
+            netAreaAxisModeButton.setText(netAreaEnergyMode.get() ? "Energy" : "Channel");
+            convertRangeFields.run();
+        });
+
+        TextArea output = new TextArea();
+        output.setEditable(false);
+        output.setWrapText(false);
+        output.setStyle("-fx-font-family: 'Consolas';");
+        output.setPrefRowCount(14);
+
+        NumberAxis netAreaXAxis = new NumberAxis();
+        netAreaXAxis.setLabel("Channel");
+        NumberAxis netAreaYAxis = new NumberAxis();
+        netAreaYAxis.setLabel("Counts");
+        LineChart<Number, Number> netAreaChart = new LineChart<>(netAreaXAxis, netAreaYAxis);
+        netAreaChart.setTitle("NetArea");
+        netAreaChart.setCreateSymbols(false);
+        netAreaChart.setAnimated(false);
+        netAreaChart.setLegendVisible(true);
+        netAreaChart.setMinHeight(320);
+
+        Button btnCalc = new Button("Berechne NetArea");
+        btnCalc.setOnAction(e -> {
+            var selected = new java.util.ArrayList<>(list.getSelectionModel().getSelectedItems());
+            if (selected.isEmpty() && netAreaFileCombo.getValue() != null) {
+                selected.add(netAreaFileCombo.getValue());
+            }
+            if (selected.isEmpty()) {
+                output.setText("Bitte mindestens eine SPE-Datei auswaehlen.");
+                return;
+            }
+
+            try {
+                double b1 = parseNetAreaBoundary(netAreaRange1Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+                double b2 = parseNetAreaBoundary(netAreaRange2Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+                double b3 = parseNetAreaBoundary(netAreaRange3Field, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+                if (!(b1 < b2 && b2 < b3)) {
+                    output.setText("Es muss gelten: Bereich 1 < Bereich 2 < Bereich 3");
+                    return;
+                }
+
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format(java.util.Locale.US, "%-28s %12s %12s %12s%n", "Datei", "Net 1-2", "Net 2-3", "Net1/Net2"));
+                sb.append("----------------------------------------------------------------------------\n");
+
+                for (java.nio.file.Path path : selected) {
+                    XYSeries series = XYSeriesIO.fromSpe(path);
+                    double area12 = computeNetArea(series, b1, b2);
+                    double area23 = computeNetArea(series, b2, b3);
+                    double ratio = Math.abs(area23) < 1e-12 ? Double.NaN : area12 / area23;
+                    sb.append(String.format(
+                            java.util.Locale.US,
+                            "%-28s %12.2f %12.2f %12s%n",
+                            path.getFileName().toString(),
+                            area12,
+                            area23,
+                            Double.isFinite(ratio) ? String.format(java.util.Locale.US, "%.4f", ratio) : "-"
+                    ));
+                }
+
+                output.setText(sb.toString());
+                java.nio.file.Path selectedPath = netAreaFileCombo.getValue() != null ? netAreaFileCombo.getValue() : selected.get(0);
+                XYSeries selectedSeries = XYSeriesIO.fromSpe(selectedPath);
+                double d1 = Double.parseDouble(netAreaRange1Field.getText().trim().replace(',', '.'));
+                double d2 = Double.parseDouble(netAreaRange2Field.getText().trim().replace(',', '.'));
+                double d3 = Double.parseDouble(netAreaRange3Field.getText().trim().replace(',', '.'));
+                XYSeries displayedSeries = buildDisplayedSeries(selectedSeries, netAreaEnergyMode.get(), netAreaA0Field, netAreaA1Field, netAreaA2Field);
+                netAreaXAxis.setLabel(netAreaEnergyMode.get() ? "Energy [keV]" : "Channel");
+                updateNetAreaChart(netAreaChart, displayedSeries, d1, d2, d3);
+            } catch (NumberFormatException ex) {
+                output.setText("Bitte gueltige Bereichsgrenzen eingeben.");
+            } catch (Exception ex) {
+                netAreaChart.getData().clear();
+                output.setText("Fehler bei NetArea-Berechnung:\n" + ex.getMessage());
+            }
+        });
+
+        VBox content = new VBox(10, title, controls, list, selectionRow, calibrationRow, rangeBox, btnCalc, output, netAreaChart);
+        content.setPadding(new Insets(10));
+
+        Tab tab = new Tab("NetArea");
+        tab.setClosable(false);
+        tab.setContent(content);
+        return tab;
+    }
+
+    private static double computeNetArea(XYSeries series, double fromX, double toX) {
+        double lo = Math.min(fromX, toX);
+        double hi = Math.max(fromX, toX);
+
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i < series.size(); i++) {
+            double x = series.x(i);
+            if (x >= lo && x <= hi) {
+                if (first < 0) {
+                    first = i;
+                }
+                last = i;
+            }
+        }
+
+        if (first < 0 || last <= first) {
+            return 0.0;
+        }
+
+        double x0 = series.x(first);
+        double x1 = series.x(last);
+        double y0 = series.y(first);
+        double y1 = series.y(last);
+        double dx = x1 - x0;
+        if (Math.abs(dx) < 1e-12) {
+            return 0.0;
+        }
+
+        double net = 0.0;
+        for (int i = first; i <= last; i++) {
+            double x = series.x(i);
+            double baseline = y0 + (y1 - y0) * (x - x0) / dx;
+            net += series.y(i) - baseline;
+        }
+        return net;
+    }
+
+    private XYSeries buildDisplayedSeries(XYSeries source, boolean energyMode, TextField a0Field, TextField a1Field, TextField a2Field) {
+        if (source == null) return null;
+        if (!energyMode) {
+            return source;
+        }
+
+        double a0 = parseDoubleOrDefault(a0Field, 0.0);
+        double a1 = parseDoubleOrDefault(a1Field, 0.02);
+        double a2 = parseDoubleOrDefault(a2Field, 0.0);
+
+        double[] oldX = source.xArrayCopy();
+        double[] y = source.yArrayCopy();
+        double[] newX = new double[oldX.length];
+        for (int i = 0; i < oldX.length; i++) {
+            newX[i] = a0 + a1 * oldX[i] + a2 * oldX[i] * oldX[i];
+        }
+        return XYSeries.of(newX, y, source.title());
+    }
+
+    private static void updateNetAreaChart(LineChart<Number, Number> chart, XYSeries series, double b1, double b2, double b3) {
+        chart.getData().clear();
+        clearNetAreaOverlays(chart);
+        if (series == null || series.size() == 0) {
+            return;
+        }
+
+        double lo = Math.min(b1, Math.min(b2, b3));
+        double hi = Math.max(b1, Math.max(b2, b3));
+        double pad = Math.max((hi - lo) * 0.05, 1e-9);
+        double viewLo = lo - pad;
+        double viewHi = hi + pad;
+
+        XYChart.Series<Number, Number> spectrumSeries = new XYChart.Series<>();
+        spectrumSeries.setName("Spectrum");
+        XYChart.Series<Number, Number> bg12Series = baselineSeries(series, b1, b2, "Background 1-2");
+        XYChart.Series<Number, Number> bg23Series = baselineSeries(series, b2, b3, "Background 2-3");
+
+        double maxY = 0.0;
+        for (int i = 0; i < series.size(); i++) {
+            double x = series.x(i);
+            double y = series.y(i);
+            if (x < viewLo || x > viewHi || !Double.isFinite(x) || !Double.isFinite(y)) {
+                continue;
+            }
+            spectrumSeries.getData().add(new XYChart.Data<>(x, y));
+            maxY = Math.max(maxY, y);
+        }
+
+        if (spectrumSeries.getData().isEmpty()) {
+            return;
+        }
+
+        chart.getData().add(spectrumSeries);
+        if (!bg12Series.getData().isEmpty()) {
+            chart.getData().add(bg12Series);
+        }
+        if (!bg23Series.getData().isEmpty()) {
+            chart.getData().add(bg23Series);
+        }
+
+        NumberAxis xAxis = (NumberAxis) chart.getXAxis();
+        NumberAxis yAxis = (NumberAxis) chart.getYAxis();
+        xAxis.setAutoRanging(false);
+        xAxis.setLowerBound(viewLo);
+        xAxis.setUpperBound(viewHi);
+        xAxis.setTickUnit(Math.max((viewHi - viewLo) / 6.0, 1e-6));
+        yAxis.setAutoRanging(false);
+        yAxis.setLowerBound(0.0);
+        yAxis.setUpperBound(maxY <= 0.0 ? 1.0 : maxY * 1.08);
+        yAxis.setTickUnit(Math.max(yAxis.getUpperBound() / 6.0, 1.0));
+
+        javafx.application.Platform.runLater(() -> {
+            styleSeries(spectrumSeries, "-fx-stroke: #4b5563; -fx-stroke-width: 1.8px;");
+            styleSeries(bg12Series, "-fx-stroke: #d35400; -fx-stroke-width: 1.4px; -fx-stroke-dash-array: 6 4;");
+            styleSeries(bg23Series, "-fx-stroke: #16a085; -fx-stroke-width: 1.4px; -fx-stroke-dash-array: 6 4;");
+            addNetAreaPolygon(chart, series, b1, b2, "#d35400");
+            addNetAreaPolygon(chart, series, b2, b3, "#16a085");
+        });
+    }
+
+    private static XYChart.Series<Number, Number> baselineSeries(XYSeries series, double fromX, double toX, String name) {
+        XYChart.Series<Number, Number> out = new XYChart.Series<>();
+        out.setName(name);
+        int first = firstIndexInRange(series, fromX, toX);
+        int last = lastIndexInRange(series, fromX, toX);
+        if (first < 0 || last <= first) {
+            return out;
+        }
+        out.getData().add(new XYChart.Data<>(series.x(first), series.y(first)));
+        out.getData().add(new XYChart.Data<>(series.x(last), series.y(last)));
+        return out;
+    }
+
+    private static void styleSeries(XYChart.Series<Number, Number> series, String lineStyle) {
+        if (series == null) {
+            return;
+        }
+        Node node = series.getNode();
+        if (node != null) {
+            Node line = node.lookup(".chart-series-line");
+            if (line != null) {
+                line.setStyle(lineStyle);
+            }
+        }
+    }
+
+    private static int firstIndexInRange(XYSeries series, double fromX, double toX) {
+        double lo = Math.min(fromX, toX);
+        double hi = Math.max(fromX, toX);
+        for (int i = 0; i < series.size(); i++) {
+            double x = series.x(i);
+            if (x >= lo && x <= hi) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static int lastIndexInRange(XYSeries series, double fromX, double toX) {
+        double lo = Math.min(fromX, toX);
+        double hi = Math.max(fromX, toX);
+        for (int i = series.size() - 1; i >= 0; i--) {
+            double x = series.x(i);
+            if (x >= lo && x <= hi) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static void clearNetAreaOverlays(LineChart<Number, Number> chart) {
+        Node plotBg = chart.lookup(".chart-plot-background");
+        if (plotBg == null || plotBg.getParent() == null) {
+            return;
+        }
+        if (plotBg.getParent() instanceof Pane pane) {
+            pane.getChildren().removeIf(node -> "netarea-overlay".equals(node.getUserData()));
+        }
+    }
+
+    private static void addNetAreaPolygon(LineChart<Number, Number> chart, XYSeries series, double fromX, double toX, String colorHex) {
+        int first = firstIndexInRange(series, fromX, toX);
+        int last = lastIndexInRange(series, fromX, toX);
+        if (first < 0 || last <= first) {
+            return;
+        }
+
+        Node plotBg = chart.lookup(".chart-plot-background");
+        if (plotBg == null || !(plotBg.getParent() instanceof Pane pane)) {
+            return;
+        }
+
+        NumberAxis xAxis = (NumberAxis) chart.getXAxis();
+        NumberAxis yAxis = (NumberAxis) chart.getYAxis();
+        var plotBounds = plotBg.getBoundsInParent();
+        Rectangle clip = new Rectangle(plotBounds.getMinX(), plotBounds.getMinY(), plotBounds.getWidth(), plotBounds.getHeight());
+        double x0 = series.x(first);
+        double x1 = series.x(last);
+        double y0 = series.y(first);
+        double y1 = series.y(last);
+        double dx = x1 - x0;
+        if (Math.abs(dx) < 1e-12) {
+            return;
+        }
+
+        java.util.List<Double> points = new java.util.ArrayList<>();
+        java.util.List<Double> baseline = new java.util.ArrayList<>();
+        for (int i = first; i <= last; i++) {
+            double x = series.x(i);
+            double y = series.y(i);
+            double bg = y0 + (y1 - y0) * (x - x0) / dx;
+            double px = xAxis.getDisplayPosition(x) + plotBounds.getMinX();
+            double py = yAxis.getDisplayPosition(y) + plotBounds.getMinY();
+            double pbg = yAxis.getDisplayPosition(bg) + plotBounds.getMinY();
+
+            boolean positive = y > bg;
+            boolean finite = Double.isFinite(px) && Double.isFinite(py) && Double.isFinite(pbg);
+            if (!positive || !finite) {
+                addOverlaySegment(pane, clip, points, baseline, colorHex);
+                points.clear();
+                baseline.clear();
+                continue;
+            }
+
+            points.add(px);
+            points.add(py);
+            baseline.add(px);
+            baseline.add(pbg);
+        }
+
+        addOverlaySegment(pane, clip, points, baseline, colorHex);
+    }
+
+    private static void addOverlaySegment(Pane pane, Rectangle clip, java.util.List<Double> points, java.util.List<Double> baseline, String colorHex) {
+        if (points.size() < 4 || baseline.size() < 4) {
+            return;
+        }
+
+        Polygon polygon = new Polygon();
+        polygon.getPoints().addAll(points);
+        for (int i = baseline.size() - 2; i >= 0; i -= 2) {
+            polygon.getPoints().add(baseline.get(i));
+            polygon.getPoints().add(baseline.get(i + 1));
+        }
+        polygon.setStyle("-fx-fill: " + colorHex + "55; -fx-stroke: transparent;");
+        polygon.setMouseTransparent(true);
+        polygon.setClip(new Rectangle(clip.getX(), clip.getY(), clip.getWidth(), clip.getHeight()));
+        polygon.setUserData("netarea-overlay");
+        pane.getChildren().add(polygon);
+    }
+
+    private static double parseNetAreaBoundary(TextField field, boolean energyMode, TextField a0Field, TextField a1Field, TextField a2Field) {
+        double value = Double.parseDouble(field.getText().trim().replace(',', '.'));
+        if (!energyMode) {
+            return value;
+        }
+        double a0 = parseDoubleOrDefault(a0Field, 0.0);
+        double a1 = parseDoubleOrDefault(a1Field, 0.02);
+        double a2 = parseDoubleOrDefault(a2Field, 0.0);
+        Double channel = energyToChannel(value, a0, a1, a2);
+        if (channel == null || !Double.isFinite(channel)) {
+            throw new NumberFormatException("ungueltige Energiegrenze");
+        }
+        return channel;
+    }
+
+    private static void convertRangeField(TextField field, boolean toEnergyMode, TextField a0Field, TextField a1Field, TextField a2Field) {
+        String text = field.getText();
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        try {
+            double value = Double.parseDouble(text.trim().replace(',', '.'));
+            double a0 = parseDoubleOrDefault(a0Field, 0.0);
+            double a1 = parseDoubleOrDefault(a1Field, 0.02);
+            double a2 = parseDoubleOrDefault(a2Field, 0.0);
+            Double converted = toEnergyMode ? channelToEnergy(value, a0, a1, a2) : energyToChannel(value, a0, a1, a2);
+            if (converted != null && Double.isFinite(converted)) {
+                field.setText(String.format(java.util.Locale.US, "%.2f", converted));
+            }
+        } catch (NumberFormatException ignored) {
+        }
+    }
+
+    private static double parseDoubleOrDefault(TextField field, double fallback) {
+        if (field == null) {
+            return fallback;
+        }
+        String text = field.getText();
+        if (text == null || text.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(text.trim().replace(',', '.'));
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private static Double channelToEnergy(double channel, double a0, double a1, double a2) {
+        double energy = a0 + a1 * channel + a2 * channel * channel;
+        return Double.isFinite(energy) ? energy : null;
+    }
+
+    private static Double energyToChannel(double energy, double a0, double a1, double a2) {
+        if (Math.abs(a2) < 1e-12) {
+            if (Math.abs(a1) < 1e-12) {
+                return null;
+            }
+            double channel = (energy - a0) / a1;
+            return Double.isFinite(channel) ? channel : null;
+        }
+
+        double c = a0 - energy;
+        double disc = a1 * a1 - 4.0 * a2 * c;
+        if (disc < 0.0) {
+            return null;
+        }
+
+        double sqrtDisc = Math.sqrt(disc);
+        double ch1 = (-a1 + sqrtDisc) / (2.0 * a2);
+        double ch2 = (-a1 - sqrtDisc) / (2.0 * a2);
+        double best = Double.NaN;
+        if (Double.isFinite(ch1) && ch1 >= 0.0) {
+            best = ch1;
+        }
+        if (Double.isFinite(ch2) && ch2 >= 0.0 && (Double.isNaN(best) || ch2 < best)) {
+            best = ch2;
+        }
+        return Double.isFinite(best) ? best : null;
     }
 
 
@@ -8534,31 +9197,135 @@ public class JavaFx extends Application {
 
 
     private Tab createPTestTab() {
-        Tab tab = new Tab("p-Test");
+        Tab tab = new Tab("R(Z)");
         tab.setClosable(false);
+        ObjectProperty<PowerLawFitResult> currentPowerFit = new SimpleObjectProperty<>();
 
         Label zVonLabel = new Label("Z von:");
-        TextField zVonField = new TextField("5");
+        Spinner<Integer> zVonSpinner = new Spinner<>(4, 30, 4);
+        zVonSpinner.setEditable(true);
+        zVonSpinner.setPrefWidth(110);
 
         Label zBisLabel = new Label("Z bis:");
-        TextField zBisField = new TextField("30");
+        Spinner<Integer> zBisSpinner = new Spinner<>(4, 30, 11);
+        zBisSpinner.setEditable(true);
+        zBisSpinner.setPrefWidth(110);
 
-        Button berechnenButton = new Button("Berechne");
+        Button berechnenButton = new Button("Calculate");
 
         TextArea outputArea = new TextArea();
         outputArea.setEditable(false);
-        outputArea.setWrapText(true);
+        outputArea.setWrapText(false);
+        outputArea.setStyle("-fx-font-family: 'Consolas';");
         outputArea.setPrefRowCount(24);
+
+        NumberAxis fitXAxis = new NumberAxis();
+        fitXAxis.setLabel("Z");
+        NumberAxis fitYAxis = new NumberAxis();
+        fitYAxis.setLabel("R(Z)");
+        LineChart<Number, Number> fitChart = new LineChart<>(fitXAxis, fitYAxis);
+        fitChart.setTitle("Power-Law Fit");
+        fitChart.setAnimated(false);
+        fitChart.setCreateSymbols(true);
+        fitChart.setLegendVisible(true);
+        fitChart.setPrefHeight(320);
 
         GridPane inputGrid = new GridPane();
         inputGrid.setHgap(10);
         inputGrid.setVgap(10);
 
         inputGrid.add(zVonLabel, 0, 0);
-        inputGrid.add(zVonField, 1, 0);
+        inputGrid.add(zVonSpinner, 1, 0);
+
+        Label fitTheoryLabel = new Label("Fit-Theory:");
+        Label fitTheoryFormula = new Label("R(Z) = A * Z^b");
+        fitTheoryFormula.setStyle("-fx-font-weight: bold;");
+        TextField fitTheoryInput = new TextField();
+        fitTheoryInput.setPrefWidth(90);
+        fitTheoryInput.setPromptText("R");
+        Label fitTheoryArrow = new Label("=>");
+        Label fitTheoryResult = new Label("Z = -");
+        HBox fitInlineBox = new HBox(12, fitTheoryLabel, fitTheoryFormula, new Label("R(Z) ="), fitTheoryInput, fitTheoryArrow, fitTheoryResult);
+        fitInlineBox.setAlignment(Pos.CENTER_LEFT);
+        inputGrid.add(fitInlineBox, 2, 0, 2, 1);
+
+        Runnable updateFitResult = () -> {
+            PowerLawFitResult fit = currentPowerFit.get();
+            String text = fitTheoryInput.getText();
+            if (fit == null || text == null || text.isBlank()) {
+                fitTheoryResult.setText("Z = -");
+                return;
+            }
+            try {
+                double rValue = Double.parseDouble(text.trim().replace(',', '.'));
+                Double zValue = solveZFromPowerLaw(rValue, fit.a, fit.b);
+                if (zValue == null || !Double.isFinite(zValue)) {
+                    fitTheoryResult.setText("Z = -");
+                } else {
+                    fitTheoryResult.setText(String.format(java.util.Locale.US, "Z = %.2f", zValue));
+                }
+            } catch (NumberFormatException ex) {
+                fitTheoryResult.setText("Z = -");
+            }
+        };
+        fitTheoryInput.textProperty().addListener((obs, oldVal, newVal) -> updateFitResult.run());
+        currentPowerFit.addListener((obs, oldVal, newVal) -> updateFitResult.run());
 
         inputGrid.add(zBisLabel, 0, 1);
-        inputGrid.add(zBisField, 1, 1);
+        inputGrid.add(zBisSpinner, 1, 1);
+
+        Label manualFitLabel = new Label("Own Function:");
+        pTestManualAField = new TextField();
+        pTestManualAField.setPrefWidth(80);
+        pTestManualAField.setPromptText("a");
+        pTestManualBField = new TextField();
+        pTestManualBField.setPrefWidth(80);
+        pTestManualBField.setPromptText("b");
+        pTestManualRField = new TextField();
+        pTestManualRField.setPrefWidth(90);
+        pTestManualRField.setPromptText("R");
+        Label manualArrow = new Label("=>");
+        Label manualResult = new Label("Z = -");
+        HBox manualFitBox = new HBox(
+                12,
+                manualFitLabel,
+                new Label("R(Z) ="),
+                pTestManualAField,
+                new Label("* Z^"),
+                pTestManualBField,
+                new Label("R(Z) ="),
+                pTestManualRField,
+                manualArrow,
+                manualResult
+        );
+        manualFitBox.setAlignment(Pos.CENTER_LEFT);
+        inputGrid.add(manualFitBox, 2, 1, 2, 1);
+
+        Runnable updateManualFitResult = () -> {
+            String aText = pTestManualAField.getText();
+            String bText = pTestManualBField.getText();
+            String rText = pTestManualRField.getText();
+            if (aText == null || aText.isBlank() || bText == null || bText.isBlank() || rText == null || rText.isBlank()) {
+                manualResult.setText("Z = -");
+                return;
+            }
+            try {
+                double a = Double.parseDouble(aText.trim().replace(',', '.'));
+                double b = Double.parseDouble(bText.trim().replace(',', '.'));
+                double rValue = Double.parseDouble(rText.trim().replace(',', '.'));
+                Double zValue = solveZFromPowerLaw(rValue, a, b);
+                if (zValue == null || !Double.isFinite(zValue)) {
+                    manualResult.setText("Z = -");
+                } else {
+                    manualResult.setText(String.format(java.util.Locale.US, "Z = %.2f", zValue));
+                }
+            } catch (NumberFormatException ex) {
+                manualResult.setText("Z = -");
+            }
+        };
+        pTestManualAField.textProperty().addListener((obs, oldVal, newVal) -> updateManualFitResult.run());
+        pTestManualBField.textProperty().addListener((obs, oldVal, newVal) -> updateManualFitResult.run());
+        pTestManualRField.textProperty().addListener((obs, oldVal, newVal) -> updateManualFitResult.run());
 
         inputGrid.add(berechnenButton, 0, 2, 2, 1);
 
@@ -8571,8 +9338,14 @@ public class JavaFx extends Application {
 
                 String roehrenMat = parseOrDefault(tubeMaterial, "Rh");
 
-                int zVon = Integer.parseInt(zVonField.getText().trim());
-                int zBis = Integer.parseInt(zBisField.getText().trim());
+                Integer zVonVal = zVonSpinner.getValue();
+                Integer zBisVal = zBisSpinner.getValue();
+                if (zVonVal == null || zBisVal == null) {
+                    throw new IllegalArgumentException("Bitte gueltige Z-Werte angeben.");
+                }
+
+                int zVon = zVonVal;
+                int zBis = zBisVal;
 
                 if (zVon > zBis) {
                     int tmp = zVon;
@@ -8632,20 +9405,37 @@ public class JavaFx extends Application {
                 sb.append("E_Comp [keV]     = ").append(eCompKeV).append("\n");
                 sb.append("λ_char [Å]       = ").append(lambdaCharAngstrom).append("\n");
                 sb.append("λ_comp [Å]       = ").append(lambdaCompAngstrom).append("\n");
-                sb.append("palpha [°]       = ").append(palpha).append("\n");
-                sb.append("pbeta [°]        = ").append(pbeta).append("\n");
-                sb.append("(α+β)/2 [°]      = ").append(winkelDeg).append("\n");
-                sb.append("p_elastisch [1/Å]= ").append(pElastic).append("\n");
-                sb.append("p_compton [1/Å]  = ").append(pComp).append("\n");
-                sb.append("P(Θ=90°)         = ").append(p90).append("\n");
-                sb.append("DetEff(E_Ray)    = ").append(detEffRay).append("\n");
-                sb.append("DetEff(E_Comp)   = ").append(detEffComp).append("\n");
-                sb.append("DetEffQuot       = ").append(detEffQuot).append("\n\n");
+                //sb.append("palpha [°]       = ").append(palpha).append("\n");
+                //sb.append("pbeta [°]        = ").append(pbeta).append("\n");
+                //sb.append("(α+β)/2 [°]      = ").append(winkelDeg).append("\n");
+                sb.append("momentum transfer [1/Å]= ").append(pElastic).append("\n");
+                //sb.append("p_compton [1/Å]  = ").append(pComp).append("\n");
+                sb.append("quotient of polarization factors P(Θ=90°)         = ").append(p90).append("\n");
+                //sb.append("DetEff(E_Ray)    = ").append(detEffRay).append("\n");
+                //sb.append("DetEff(E_Comp)   = ").append(detEffComp).append("\n");
+                //sb.append("DetEffQuot       = ").append(detEffQuot).append("\n\n");
 
-                sb.append("Z-Bereich        = ").append(zVon).append(" bis ").append(zBis).append("\n");
+                sb.setLength(0);
+                sb.append(String.format(java.util.Locale.US, "%-24s = %s%n", "X-ray tube material", roehrenMat));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "E_Kalpha [keV]", eCharKeV));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "E_Comp [keV]", eCompKeV));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "lambda_char [A]", lambdaCharAngstrom));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "lambda_comp [A]", lambdaCompAngstrom));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "momentum transfer", pElastic));
+                sb.append(String.format(java.util.Locale.US, "%-24s = %6.2f%n", "polarization factor", p90));
+                //sb.append("Z-Bereich        = ").append(zVon).append(" bis ").append(zBis).append("\n");
                 sb.append("------------------------------------------------------------\n");
-                sb.append(String.format("%-4s %-6s %-14s %-14s %-14s %-14s %-14s%n",
-                        "Z", "El", "mu(E_Ray)", "mu(E_Comp)", "F(Z)^2", "S(Z)", "R(Z)"));
+                sb.append(String.format(java.util.Locale.US, "%-3s %-3s %8s %8s %8s%n",
+                        "Z", "El", "F(Z)", "S(Z)", "R(Z)"));
+
+                List<Double> fitZ = new ArrayList<>();
+                List<Double> fitR = new ArrayList<>();
+                //eCharKeV = 20.2;
+                //eCompKeV= 19.3;
+                //pElastic=1.152;
+                //p90=0.9267;
+                //detEffQuot=1.0179773725839938;
+
 
                 for (int z = zVon; z <= zBis; z++) {
                     String elementString = String.valueOf(z);
@@ -8658,7 +9448,8 @@ public class JavaFx extends Application {
 
                     double f = AtomicFormFactorCalculator.F(z, pElastic);
                     double f2 = f * f;
-                    double s = IncoherentScatteringCalculator.S(z, pComp);
+                    //für s wird dasselbe p verwendet, warum auch immer
+                    double s = IncoherentScatteringCalculator.S(z, pElastic);
 
                     double r = p90
                             * detEffQuot
@@ -8666,23 +9457,281 @@ public class JavaFx extends Application {
                             * (s / f2);
 
                     sb.append(String.format(java.util.Locale.US,
-                            "%-4d %-6s %-14.6f %-14.6f %-14.6f %-14.6f %-14.6f%n",
-                            z, element.getSymbol(), muRay, muComp, f2, s, r));
+                            "%-3d %-3s %8.2f %8.2f %8.2f%n",
+                            z, element.getSymbol(), f, s, r));
+
+                    if (z > 0 && r > 0.0 && Double.isFinite(r)) {
+                        fitZ.add((double) z);
+                        fitR.add(r);
+                    }
                 }
+
+                PowerLawFitResult logFit = fitPowerLawLogLeastSquares(fitZ, fitR);
+                PowerLawFitResult directFit = fitPowerLawDirectCurveFit(fitZ, fitR);
+                PowerLawFitResult displayFit = directFit != null ? directFit : logFit;
+                if (displayFit != null) {
+                    String fitFormula = String.format(java.util.Locale.US, "R(Z) = %.2f * Z^%.2f", displayFit.a, displayFit.b);
+                    fitTheoryFormula.setText(fitFormula);
+                    currentPowerFit.set(displayFit);
+                } else {
+                    fitTheoryFormula.setText("R(Z) = A * Z^b");
+                    currentPowerFit.set(null);
+                }
+
+                updatePowerLawChart(fitChart, fitZ, fitR, displayFit);
 
                 outputArea.setText(sb.toString());
 
             } catch (Exception ex) {
+                fitChart.getData().clear();
                 outputArea.setText("Fehler bei Berechnung:\n" + ex.getMessage());
                 ex.printStackTrace();
             }
         });
 
-        VBox root = new VBox(12, inputGrid, outputArea);
+        VBox root = new VBox(12, inputGrid, outputArea, fitChart);
         root.setPadding(new Insets(15));
 
         tab.setContent(root);
         return tab;
+    }
+
+    private static PowerLawFitResult fitPowerLawLogLeastSquares(List<Double> zValues, List<Double> yValues) {
+        if (zValues == null || yValues == null || zValues.size() != yValues.size()) {
+            return null;
+        }
+
+        double sumX = 0.0;
+        double sumY = 0.0;
+        double sumXX = 0.0;
+        double sumXY = 0.0;
+        int n = 0;
+
+        for (int i = 0; i < zValues.size(); i++) {
+            double z = zValues.get(i);
+            double y = yValues.get(i);
+            if (!(z > 0.0) || !(y > 0.0) || !Double.isFinite(z) || !Double.isFinite(y)) {
+                continue;
+            }
+            double x = Math.log(z);
+            double ly = Math.log(y);
+            sumX += x;
+            sumY += ly;
+            sumXX += x * x;
+            sumXY += x * ly;
+            n++;
+        }
+
+        if (n < 2) {
+            return null;
+        }
+
+        double denom = n * sumXX - sumX * sumX;
+        if (Math.abs(denom) < 1e-20) {
+            return null;
+        }
+
+        double b = (n * sumXY - sumX * sumY) / denom;
+        double lnA = (sumY - b * sumX) / n;
+        double a = Math.exp(lnA);
+
+        double sse = 0.0;
+        int used = 0;
+        for (int i = 0; i < zValues.size(); i++) {
+            double z = zValues.get(i);
+            double y = yValues.get(i);
+            if (!(z > 0.0) || !(y > 0.0) || !Double.isFinite(z) || !Double.isFinite(y)) {
+                continue;
+            }
+            double yHat = a * Math.pow(z, b);
+            if (Double.isFinite(yHat)) {
+                double err = yHat - y;
+                sse += err * err;
+                used++;
+            }
+        }
+
+        if (used < 1) {
+            return null;
+        }
+        double rmse = Math.sqrt(sse / used);
+        return new PowerLawFitResult(a, b, rmse, used);
+    }
+
+    private static PowerLawFitResult fitPowerLawDirectCurveFit(List<Double> zValues, List<Double> yValues) {
+        if (zValues == null || yValues == null || zValues.size() != yValues.size()) {
+            return null;
+        }
+
+        List<Double> validZ = new ArrayList<>();
+        List<Double> validY = new ArrayList<>();
+        for (int i = 0; i < zValues.size(); i++) {
+            double z = zValues.get(i);
+            double y = yValues.get(i);
+            if (!(z > 0.0) || !Double.isFinite(z) || !Double.isFinite(y)) {
+                continue;
+            }
+            validZ.add(z);
+            validY.add(y);
+        }
+
+        int n = validZ.size();
+        if (n < 2) {
+            return null;
+        }
+
+        double[] z = new double[n];
+        double[] y = new double[n];
+        for (int i = 0; i < n; i++) {
+            z[i] = validZ.get(i);
+            y[i] = validY.get(i);
+        }
+
+        PowerLawFitResult startFit = fitPowerLawLogLeastSquares(zValues, yValues);
+        double startA = startFit != null && Double.isFinite(startFit.a) ? startFit.a : y[0];
+        double startB = startFit != null && Double.isFinite(startFit.b) ? startFit.b : -1.0;
+
+        MultivariateJacobianFunction model = point -> {
+            double a = point.getEntry(0);
+            double b = point.getEntry(1);
+            double[] values = new double[n];
+            double[][] jacobian = new double[n][2];
+
+            for (int i = 0; i < n; i++) {
+                double zPowB = Math.pow(z[i], b);
+                double yHat = a * zPowB;
+                values[i] = Double.isFinite(yHat) ? yHat : 0.0;
+                jacobian[i][0] = Double.isFinite(zPowB) ? zPowB : 0.0;
+
+                double dDb = a * zPowB * Math.log(z[i]);
+                jacobian[i][1] = Double.isFinite(dDb) ? dDb : 0.0;
+            }
+
+            RealVector value = new ArrayRealVector(values, false);
+            RealMatrix jac = new Array2DRowRealMatrix(jacobian, false);
+            return new Pair<>(value, jac);
+        };
+
+        LeastSquaresProblem problem = new LeastSquaresBuilder()
+                .start(new ArrayRealVector(new double[]{startA, startB}, false))
+                .target(y)
+                .model(model)
+                .maxEvaluations(2000)
+                .maxIterations(2000)
+                .checkerPair(new SimpleVectorValueChecker(1e-10, 1e-10))
+                .build();
+
+        LeastSquaresOptimizer optimizer = new LevenbergMarquardtOptimizer();
+        LeastSquaresOptimizer.Optimum optimum = optimizer.optimize(problem);
+        RealVector solution = optimum.getPoint();
+
+        double a = solution.getEntry(0);
+        double b = solution.getEntry(1);
+        if (!Double.isFinite(a) || !Double.isFinite(b)) {
+            return null;
+        }
+
+        double sse = 0.0;
+        int used = 0;
+        for (int i = 0; i < n; i++) {
+            double yHat = a * Math.pow(z[i], b);
+            if (!Double.isFinite(yHat)) {
+                continue;
+            }
+            double err = yHat - y[i];
+            sse += err * err;
+            used++;
+        }
+
+        if (used < 1) {
+            return null;
+        }
+
+        double rmse = Math.sqrt(sse / used);
+        return new PowerLawFitResult(a, b, rmse, used);
+    }
+
+    private static Double solveZFromPowerLaw(double rValue, double a, double b) {
+        if (!(rValue > 0.0) || !(a > 0.0) || !Double.isFinite(rValue) || !Double.isFinite(a) || !Double.isFinite(b) || Math.abs(b) < 1e-12) {
+            return null;
+        }
+        double ratio = rValue / a;
+        if (!(ratio > 0.0) || !Double.isFinite(ratio)) {
+            return null;
+        }
+        double z = Math.pow(ratio, 1.0 / b);
+        return Double.isFinite(z) ? z : null;
+    }
+
+    private static void updatePowerLawChart(LineChart<Number, Number> chart, List<Double> zValues, List<Double> rValues, PowerLawFitResult fit) {
+        chart.getData().clear();
+        NumberAxis xAxis = (NumberAxis) chart.getXAxis();
+
+        XYChart.Series<Number, Number> dataSeries = new XYChart.Series<>();
+        dataSeries.setName("Data");
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+
+        for (int i = 0; i < zValues.size(); i++) {
+            double z = zValues.get(i);
+            double r = rValues.get(i);
+            if (!Double.isFinite(z) || !Double.isFinite(r)) {
+                continue;
+            }
+            dataSeries.getData().add(new XYChart.Data<>(z, r));
+            minZ = Math.min(minZ, z);
+            maxZ = Math.max(maxZ, z);
+        }
+
+        chart.getData().add(dataSeries);
+
+        if (!Double.isFinite(minZ) || !Double.isFinite(maxZ)) {
+            xAxis.setAutoRanging(true);
+            return;
+        }
+
+        xAxis.setAutoRanging(false);
+        xAxis.setLowerBound(minZ);
+        xAxis.setUpperBound(maxZ);
+        xAxis.setTickUnit(Math.max(1.0, Math.ceil((maxZ - minZ) / 6.0)));
+
+        if (fit == null || maxZ <= minZ) {
+            return;
+        }
+
+        XYChart.Series<Number, Number> fitSeries = new XYChart.Series<>();
+        fitSeries.setName("Fit");
+        int samples = Math.max(60, (int) Math.ceil((maxZ - minZ) * 20.0));
+        for (int i = 0; i <= samples; i++) {
+            double z = minZ + (maxZ - minZ) * i / samples;
+            double r = fit.a * Math.pow(z, fit.b);
+            if (Double.isFinite(r)) {
+                XYChart.Data<Number, Number> point = new XYChart.Data<>(z, r);
+                point.nodeProperty().addListener((obs, oldNode, newNode) -> {
+                    if (newNode != null) {
+                        newNode.setVisible(false);
+                        newNode.setManaged(false);
+                    }
+                });
+                fitSeries.getData().add(point);
+            }
+        }
+
+        chart.getData().add(fitSeries);
+    }
+
+    private static final class PowerLawFitResult {
+        final double a;
+        final double b;
+        final double rmse;
+        final int n;
+
+        private PowerLawFitResult(double a, double b, double rmse, int n) {
+            this.a = a;
+            this.b = b;
+            this.rmse = rmse;
+            this.n = n;
+        }
     }
 
 
